@@ -1,0 +1,50 @@
+{
+  "files": 23,
+  "pages": 50,
+  "items": 1305,
+  "unique_codes": 1305,
+  "variants": 547,
+  "default_location": "Madesimo",
+  "duplicate_codes": {},
+  "warnings": [
+    "[FU2379N",
+    "/",
+    "GC4550%"
+  ],
+  "counts_by_file": {
+    "4 GANCI BABY.pdf": 5,
+    "ALLMOUNTAIN.pdf": 25,
+    "ARVA.pdf": 9,
+    "BOB.pdf": 3,
+    "CASCHI.pdf": 197,
+    "CIASPOLE.pdf": 51,
+    "SCARPONI ALPINISMO.pdf": 30,
+    "SCARPNI ADULTO PLUS.pdf": 11,
+    "RACE.pdf": 33,
+    "FREESTYLE BABY.pdf": 7,
+    "FREERIDE BABY.pdf": 12,
+    "FREERIDE .pdf": 46,
+    "SCARPONI SCI ADULTO.pdf": 216,
+    "SCARPONI SCI BABY.pdf": 122,
+    "SCARPONI SCI DALBELLO.pdf": 5,
+    "SCARPONI SNOW ADULTO.pdf": 145,
+    "SCARPONI SNOW BABY.pdf": 55,
+    "SCI BABY.pdf": 118,
+    "SUPERMATIC.pdf": 1,
+    "SPLITBOARD.pdf": 6,
+    "SNOWBOARD BABY.pdf": 69,
+    "SNOW FRESCA.pdf": 5,
+    "SNOW ADULTO.pdf": 134
+  },
+  "counts_by_category": {
+    "ski_boots": 389,
+    "ski": 241,
+    "avalanche": 9,
+    "sled": 3,
+    "helmet": 197,
+    "snowshoes": 51,
+    "snowboard_boots": 200,
+    "snowboard": 215
+  },
+  "empty_prices_and_serials": true
+}

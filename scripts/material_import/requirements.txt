@@ -1,0 +1,2 @@
+# Solo per estrazione offline dei PDF, non necessario al gestionale.
+PyMuPDF==2.1

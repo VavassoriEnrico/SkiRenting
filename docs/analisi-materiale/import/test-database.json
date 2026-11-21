@@ -1,0 +1,18 @@
+{
+  "database": "PostgreSQL 14.21 temporaneo locale",
+  "sql_sha256": "39c33fd91fad477898fa10a14485a58efac97602d2df565aac1920101e2e90c7",
+  "checks": [
+    "1305 articoli, 547 varianti e corrispondenza dei dati alle celle originali",
+    "Riesecuzione: stessi ID, stessi timestamp, nessun duplicato",
+    "Blocco DO autonomo e riepiloghi eseguiti su connessioni separate, senza tabelle temporanee",
+    "Riesecuzione dopo modifiche: sede, stato, flag, note, prezzi e raggio preservati; RLS aggiornata",
+    "Compatibile con i tre sci già caricati dallo script 003",
+    "Conflitto su codice: intera transazione annullata, nessun caricamento parziale"
+  ],
+  "import_counts": {
+    "items": 1305,
+    "variants": 547
+  },
+  "source_alignment_mismatches": 0,
+  "real_supabase_modified": false
+}
