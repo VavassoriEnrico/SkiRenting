@@ -61,3 +61,32 @@ def create_item(
         )
     except httpx.HTTPError as error:
         raise inventory_error(error) from error
+
+
+def transfer_item(
+    client: httpx.Client, user_id: UUID, item_id: UUID, source: UUID, destination: UUID,
+):
+    if source == destination:
+        raise HTTPException(422, 'Scegli una sede di destinazione diversa.')
+    get_authorized_location(client, user_id, source)
+    get_authorized_location(client, user_id, destination)
+    try:
+        return rental_inventory_repository.transfer_item(client, item_id, source, destination)
+    except httpx.HTTPStatusError as error:
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code') if isinstance(body, dict) else None
+        messages = {
+            'PGRST202': (503, 'Eseguire 011_rental_inventory_transfers.sql in Supabase.'),
+            '42501': (403, 'Non sei autorizzato a trasferire articoli tra queste sedi.'),
+            'P0002': (404, 'Articolo non trovato.'),
+            '23514': (409, 'L’articolo è già stato spostato. Aggiorna il magazzino.'),
+            '55000': (409, 'L’articolo è assegnato a un noleggio aperto e non può essere spostato.'),
+            '22023': (422, 'Scegli una sede di destinazione diversa.'),
+        }
+        status, message = messages.get(code, (503, 'Trasferimento non riuscito. Verifica la sede dell’articolo prima di riprovare.'))
+        raise HTTPException(status, message) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Connessione interrotta. Verifica la sede dell’articolo prima di riprovare.') from error

@@ -64,3 +64,12 @@ def create_item(client: httpx.Client, location_id: UUID, data: dict) -> dict:
     })
     response.raise_for_status()
     return response.json()
+
+
+def transfer_item(client: httpx.Client, item_id: UUID, source: UUID, destination: UUID) -> dict:
+    response = client.post('/rest/v1/rpc/skirenting_transfer_rental_item', json={
+        'p_item_id': str(item_id), 'p_source_location_id': str(source),
+        'p_target_location_id': str(destination),
+    })
+    response.raise_for_status()
+    return response.json()

@@ -48,6 +48,28 @@ tests/
 
 Flusso: router → servizio → repository → database.
 
+## Elenco clienti
+
+`GET /api/v1/customers` richiede il token Supabase, un profilo operatore e almeno
+una sede assegnata. Legge `customers` con il token dell'utente e le policy RLS
+di `sql/006_customers.sql`. L'anagrafica è condivisa tra tutte le sedi.
+
+La risposta contiene solo ID, nome, cognome, email, telefono e note; non espone
+il percorso dei documenti. Il repository legge tutte le pagine ordinate per
+cognome, nome e ID, senza fermarsi al limite di una richiesta Supabase.
+Per ora la ricerca avviene nel frontend sull'elenco completo. Lo storico delle
+prenotazioni del singolo cliente non è ancora implementato.
+
+`POST /api/v1/customers` registra un cliente e restituisce la sua scheda con ID
+(201). Richiede gli stessi accessi della lettura e usa il token dell'operatore
+con le policy INSERT di 006, senza nuove query o chiavi segrete. Nome e cognome
+sono obbligatori; email, cellulare e note sono facoltativi. Nomi e recapiti non
+sono univoci: gli omonimi vengono selezionati dall'operatore, non uniti automaticamente.
+Non accetta albergo, ID scelti dal browser o riferimenti a documenti non caricati.
+
+File dedicati: `api/routers/customers.py`, `services/customer_service.py`,
+`repositories/customer_repository.py`, `schemas/customer.py`.
+
 I router validano le richieste con gli schemi e chiamano i servizi.
 I servizi coordinano repository e transazioni: una singola operazione di noleggio
 deve riuscire o fallire interamente. I repository non eseguono commit.

@@ -16,8 +16,8 @@ export function AppLayout() {
   const mobileMenu = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const section = navigationSections.find((entry) => entry.items.some((item) => item.href === pathname));
-    const page = section?.items.find((item) => item.href === pathname);
+    const section = navigationSections.find((entry) => entry.items.some((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`))));
+    const page = section?.items.find((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`)));
     document.title = page ? `${page.label} · ${section?.label} · SkiRenting` : 'SkiRenting';
   }, [pathname]);
 

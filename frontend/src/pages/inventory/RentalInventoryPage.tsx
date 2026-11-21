@@ -1,23 +1,25 @@
-import { Boxes, CircleCheck, Eye, Layers3, Package, Plus, Search, X } from 'lucide-react';
+import { ArrowRightLeft, Boxes, CircleCheck, Eye, Layers3, Package, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { StatCard } from '../../components/ui/StatCard';
 import { apiGet } from '../../lib/api';
+import type { Location } from '../../lib/api';
 import { InventoryDetailsDialog } from './InventoryDetailsDialog';
 import { NewRentalItemDialog } from './NewRentalItemDialog';
+import { RentalItemTransfer } from './RentalItemTransfer';
 import { groupRentalItems, isRentable, rentalStatuses, sizeLabel, variantFields } from './rental-inventory';
-import type { RentalInventory, RentalRow } from './rental-inventory';
+import type { RentalInventory, RentalItem, RentalRow } from './rental-inventory';
 
 const currency = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 
 export function RentalInventoryPage() {
-  const { session, location } = useAuth();
+  const { session, location, operator } = useAuth();
   // A different site/session gets fresh state, even outside AppLayout.
-  return <RentalInventoryContent key={`${location?.id}:${session?.access_token}`} token={session?.access_token} locationId={location?.id} locationName={location?.name} />;
+  return <RentalInventoryContent key={`${location?.id}:${session?.access_token}`} token={session?.access_token} locationId={location?.id} locationName={location?.name} locations={operator?.locations || []} />;
 }
 
-function RentalInventoryContent({ token, locationId, locationName }: { token?: string; locationId?: string; locationName?: string }) {
+function RentalInventoryContent({ token, locationId, locationName, locations }: { token?: string; locationId?: string; locationName?: string; locations: Location[] }) {
   const [data, setData] = useState<RentalInventory | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -27,6 +29,9 @@ function RentalInventoryContent({ token, locationId, locationName }: { token?: s
   const [selected, setSelected] = useState<RentalRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [success, setSuccess] = useState('');
+  const [transferItem, setTransferItem] = useState<RentalItem | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const destinations = locations.filter((entry) => entry.id !== locationId);
 
   useEffect(() => {
     if (!token || !locationId) return;
@@ -84,7 +89,7 @@ function RentalInventoryContent({ token, locationId, locationName }: { token?: s
     {creating && token && locationId && <NewRentalItemDialog token={token} locationId={locationId} locationName={locationName || ''} initialCategoryId={currentCategory?.id} onClose={() => setCreating(false)} onCreated={(item) => {
       setCreating(false); setCategory(item.category_id); resetFilters(); setSuccess(`Articolo ${item.code} salvato nel magazzino di ${locationName}.`); setAttempt((value) => value + 1);
     }} />}
-    {selected && <InventoryDetailsDialog onClose={() => setSelected(null)} details={{
+    {selected && <InventoryDetailsDialog busy={transferBusy} onClose={() => { setSelected(null); setTransferItem(null); }} details={{
       demo: false, title: `${selected.variant.brand} ${selected.variant.model}`, category: selected.variant.category.name,
       warehouse: `Magazzino noleggio · ${locationName}`, fields: [
         ...variantFields(selected.variant), { label: 'Gruppo noleggio', value: selected.group.name },
@@ -92,8 +97,15 @@ function RentalInventoryContent({ token, locationId, locationName }: { token?: s
         { label: 'Tariffa', value: 'Da definire' },
       ], codes: [], codesLabel: 'Esemplari e codici univoci', units: [...selected.units].sort((a, b) => a.code.localeCompare(b.code, 'it', { numeric: true })).map((unit) => ({
         code: unit.code,
+        action: <button className="sales-button inventory-transfer-button" type="button" disabled={transferBusy || destinations.length === 0} aria-label={`Sposta ${unit.code} di sede`} title={destinations.length === 0 ? 'Nessun’altra sede autorizzata' : undefined} onClick={() => setTransferItem(unit)}><ArrowRightLeft size={14} aria-hidden="true" />Sposta sede</button>,
         description: [rentalStatuses[unit.status], unit.is_rentable ? 'Noleggiabile' : 'Non noleggiabile', unit.is_bookable ? 'Prenotabile' : 'Non prenotabile', unit.serial_number ? `S/N: ${unit.serial_number}` : '', unit.purchase_price != null ? `Acquisto: ${currency.format(unit.purchase_price)}` : '', unit.legacy_sold_price != null ? `Venduto storico: ${currency.format(unit.legacy_sold_price)}` : '', unit.notes || ''].filter(Boolean).join(' · '),
       })),
-    }} />}
+    }}>
+      {transferItem && token && locationId && <RentalItemTransfer key={transferItem.id} item={transferItem} token={token} source={{ id: locationId, name: locationName || '' }} destinations={destinations} onBusyChange={setTransferBusy} onCancel={() => setTransferItem(null)} onSuccess={(result, targetName) => {
+        setTransferItem(null); setTransferBusy(false); setSelected(null);
+        setSuccess(`Articolo ${result.code} spostato da ${locationName} a ${targetName}.`);
+        setAttempt((value) => value + 1);
+      }} />}
+    </InventoryDetailsDialog>}
   </div>;
 }

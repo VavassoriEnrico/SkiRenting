@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.api.routers.operator import CurrentUserId, SupabaseClient
+from app.schemas.inventory_transfer import InventoryTransferCreate, InventoryTransferRead
 from app.schemas.rental_inventory import (
     RentalCatalogRead,
     RentalInventoryRead,
@@ -29,3 +30,13 @@ def create_item(
     location_id: UUID, data: RentalItemCreate, user_id: CurrentUserId, client: SupabaseClient,
 ):
     return rental_inventory_service.create_item(client, user_id, location_id, data)
+
+
+@router.post('/{location_id}/rental-inventory/{item_id}/transfer', response_model=InventoryTransferRead)
+def transfer_item(
+    location_id: UUID, item_id: UUID, data: InventoryTransferCreate,
+    user_id: CurrentUserId, client: SupabaseClient,
+):
+    return rental_inventory_service.transfer_item(
+        client, user_id, item_id, location_id, data.destination_location_id,
+    )

@@ -46,6 +46,74 @@ def api(monkeypatch):
                     if requested_id is None or requested_id == f"eq.{identifier}"
                 ],
             )
+        if request.url.path == "/rest/v1/rpc/skirenting_transfer_rental_item":
+            assert request.method == "POST"
+            body = json.loads(request.content)
+            assert body["p_source_location_id"] == LOCATION_A
+            assert body["p_target_location_id"] == LOCATION_B
+            if state.get("transfer_error"):
+                return httpx.Response(400, json={"code": state["transfer_error"]})
+            return httpx.Response(200, json={
+                "id": body["p_item_id"], "code": "+001", "from_location_id": LOCATION_A,
+                "to_location_id": LOCATION_B,
+            })
+        if request.url.path == "/rest/v1/rental_rates":
+            if state.get("rate_error"):
+                return httpx.Response(400, json={"code": state["rate_error"]})
+            rates = state.setdefault("rates", [])
+            if request.method == "PATCH":
+                assert request.headers["prefer"] == "return=representation"
+                matches = [r for r in rates if request.url.params["id"] == f"eq.{r['id']}"]
+                for rate in matches:
+                    rate.update(json.loads(request.content))
+                return httpx.Response(200, json=matches)
+            assert request.url.params["group.is_active"] == "eq.true"
+            assert "!inner" in request.url.params["select"]
+            offset = int(request.url.params["offset"])
+            return httpx.Response(200, json=rates[offset:offset + 300])
+        if request.url.path == "/rest/v1/hotels":
+            assert request.url.params["select"] == "id,name,is_active,discount"
+            if state.get("hotel_error"):
+                return httpx.Response(400, json={"code": state["hotel_error"]})
+            rows = state.setdefault("hotels", [])
+            if request.method == "POST":
+                assert request.headers["prefer"] == "return=representation"
+                body = json.loads(request.content)
+                assert set(body) == {"name", "discount"}
+                if any(h["name"].casefold() == body["name"].casefold() for h in rows):
+                    return httpx.Response(409, json={"code": "23505"})
+                hotel = {"id": str(UUID(int=9000 + len(rows))), "name": body["name"], "is_active": True, "discount": body["discount"]}
+                rows.append(hotel)
+                return httpx.Response(201, json=[hotel])
+            if request.method == "PATCH":
+                body = json.loads(request.content)
+                assert set(body) in ({"is_active"}, {"discount"}, {"is_active", "discount"})
+                found = [h for h in rows if request.url.params["id"] == f"eq.{h['id']}"
+                         and (request.url.params.get("is_active") != "eq.true" or h["is_active"])]
+                for hotel in found:
+                    hotel.update(body)
+                return httpx.Response(200, json=found)
+            assert request.method == "GET"
+            if "is_active" in request.url.params:
+                assert request.url.params["is_active"] == "eq.true"
+                rows = [h for h in rows if h["is_active"]]
+            offset = int(request.url.params["offset"])
+            return httpx.Response(200, json=rows[offset:offset + 300])
+        if request.url.path == "/rest/v1/customers":
+            assert request.url.params["select"] == "id,first_name,last_name,email,phone,notes"
+            assert "location_id" not in request.url.params
+            if state.get("customer_error"):
+                return httpx.Response(400, json={"code": state["customer_error"]})
+            if request.method == "POST":
+                assert request.headers["prefer"] == "return=representation"
+                data = json.loads(request.content)
+                customer = {"id": USER_ID, **data}
+                state.setdefault("customers", []).append(customer)
+                return httpx.Response(201, json=[customer])
+            assert request.url.params["order"] == "last_name,first_name,id"
+            offset = int(request.url.params["offset"])
+            size = min(int(request.url.params["limit"]), 300)
+            return httpx.Response(200, json=state.get("customers", [])[offset:offset + size])
         if request.url.path == "/rest/v1/material_categories":
             if state.get("migration_missing"):
                 return httpx.Response(400, json={"code": "42703"})
@@ -290,3 +358,358 @@ def test_catalog_reports_missing_migration(api):
     response = client.get(f"/api/v1/locations/{LOCATION_A}/rental-catalog", headers=HEADERS)
     assert response.status_code == 503
     assert "005_create_rental_item.sql" in response.json()["detail"]
+
+
+
+def test_customer_list_loads_every_page_and_excludes_document_data(api):
+    client, state = api
+    state["customers"] = [
+        {"id": str(UUID(int=index + 1)), "first_name": "Mario", "last_name": "Rossi",
+         "email": None, "phone": "+39 00123", "notes": "Nota", "document_path": "private.jpg"}
+        for index in range(1005)
+    ]
+    response = client.get("/api/v1/customers", headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()) == 1005
+    assert response.json()[0]["phone"] == "+39 00123"
+    assert "document_path" not in response.json()[0]
+    requests = [r for r in state["requests"] if r.url.path == "/rest/v1/customers"]
+    assert [r.url.params["offset"] for r in requests] == ["0", "300", "600", "900", "1005"]
+
+
+def test_customer_list_empty_returns_no_samples(api):
+    client, _ = api
+    assert client.get("/api/v1/customers", headers=HEADERS).json() == []
+
+
+def test_customer_list_requires_login(api):
+    client, state = api
+    assert client.get("/api/v1/customers").status_code == 401
+    assert not state["requests"]
+
+
+@pytest.mark.parametrize("missing", ["profile", "locations"])
+def test_customer_list_requires_configured_operator(api, missing):
+    client, state = api
+    state[missing] = None if missing == "profile" else []
+    assert client.get("/api/v1/customers", headers=HEADERS).status_code == 403
+    assert not any(r.url.path == "/rest/v1/customers" for r in state["requests"])
+
+
+@pytest.mark.parametrize("code", ["PGRST205", "42P01", "XX000"])
+def test_customer_list_database_failure_is_not_an_empty_list(api, code):
+    client, state = api
+    state["customer_error"] = code
+    response = client.get("/api/v1/customers", headers=HEADERS)
+    assert response.status_code == 503
+    if code != "XX000":
+        assert "006_customers.sql" in response.json()["detail"]
+
+
+NEW_CUSTOMER = {"first_name": " Mario ", "last_name": " Rossi ",
+                "email": " mario@example.test ", "phone": "+39 001234", "notes": " Nota "}
+
+
+def test_customer_create_and_directory_read(api):
+    client, _ = api
+    response = client.post("/api/v1/customers", headers=HEADERS, json=NEW_CUSTOMER)
+    assert response.status_code == 201
+    assert response.json() == {
+        "id": USER_ID, "first_name": "Mario", "last_name": "Rossi",
+        "email": "mario@example.test", "phone": "+39 001234", "notes": "Nota",
+    }
+    assert client.get("/api/v1/customers", headers=HEADERS).json() == [response.json()]
+
+
+def test_customer_create_optional_values_and_homonyms(api):
+    client, _ = api
+    for _ in range(2):
+        response = client.post("/api/v1/customers", headers=HEADERS, json={
+            "first_name": "Mario", "last_name": "Rossi", "email": " ", "phone": "", "notes": "",
+        })
+        assert response.status_code == 201
+        assert response.json()["email"] is None
+        assert response.json()["phone"] is None
+        assert response.json()["notes"] is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("first_name", " "), ("last_name", ""), ("email", "invalid-email"),
+    ("hotel", "Albergo"), ("id", USER_ID), ("document_path", "unverified.jpg"),
+])
+def test_customer_create_validates_fields(api, field, value):
+    client, state = api
+    response = client.post("/api/v1/customers", headers=HEADERS,
+                           json={**NEW_CUSTOMER, field: value})
+    assert response.status_code == 422
+    assert not any(r.method == "POST" for r in state["requests"])
+
+
+def test_customer_create_requires_login(api):
+    client, state = api
+    assert client.post("/api/v1/customers", json=NEW_CUSTOMER).status_code == 401
+    assert not state["requests"]
+
+
+@pytest.mark.parametrize("missing", ["profile", "locations"])
+def test_customer_create_requires_configured_operator(api, missing):
+    client, state = api
+    state[missing] = None if missing == "profile" else []
+    response = client.post("/api/v1/customers", headers=HEADERS, json=NEW_CUSTOMER)
+    assert response.status_code == 403
+    assert not any(r.method == "POST" for r in state["requests"])
+
+
+@pytest.mark.parametrize("code,status", [("PGRST205", 503), ("42501", 403),
+                                        ("23514", 422), ("XX000", 503)])
+def test_customer_create_database_errors(api, code, status):
+    client, state = api
+    state["customer_error"] = code
+    response = client.post("/api/v1/customers", headers=HEADERS, json=NEW_CUSTOMER)
+    assert response.status_code == status
+    assert "id" not in response.json()
+
+
+
+def test_hotel_create_remove_and_restore_preserves_id(api):
+    client, state = api
+    response = client.post("/api/v1/hotels", headers=HEADERS, json={"name": " Hotel Test "})
+    assert response.status_code == 201
+    hotel = response.json()
+    assert hotel["name"] == "Hotel Test"
+    assert client.get("/api/v1/hotels", headers=HEADERS).json() == [hotel]
+    assert client.delete(f"/api/v1/hotels/{hotel['id']}", headers=HEADERS).status_code == 204
+    assert client.get("/api/v1/hotels", headers=HEADERS).json() == []
+    assert state["hotels"][0]["is_active"] is False
+    restored = client.post("/api/v1/hotels", headers=HEADERS, json={"name": "HOTEL TEST"})
+    assert restored.status_code == 201
+    assert restored.json()["id"] == hotel["id"]
+    assert restored.json()["is_active"] is True
+    assert len(state["hotels"]) == 1
+    assert not any(r.method == "DELETE" for r in state["requests"])
+
+
+def test_hotel_duplicate_name_is_rejected(api):
+    client, _ = api
+    assert client.post("/api/v1/hotels", headers=HEADERS, json={"name": "Albergo"}).status_code == 201
+    assert client.post("/api/v1/hotels", headers=HEADERS, json={"name": "albergo"}).status_code == 409
+
+
+@pytest.mark.parametrize("name", [" ", "X" * 201])
+def test_hotel_name_validation(api, name):
+    client, _ = api
+    assert client.post("/api/v1/hotels", headers=HEADERS, json={"name": name}).status_code == 422
+
+
+def test_hotel_list_includes_all_pages(api):
+    client, state = api
+    state["hotels"] = [{"id": str(UUID(int=index + 1)), "name": str(index), "is_active": True}
+                       for index in range(605)]
+    assert len(client.get("/api/v1/hotels", headers=HEADERS).json()) == 605
+
+
+def test_hotel_removal_missing_id(api):
+    client, _ = api
+    assert client.delete(f"/api/v1/hotels/{LOCATION_A}", headers=HEADERS).status_code == 404
+
+
+def test_hotel_routes_require_login(api):
+    client, state = api
+    assert client.get("/api/v1/hotels").status_code == 401
+    assert client.post("/api/v1/hotels", json={"name": "Test"}).status_code == 401
+    assert client.delete(f"/api/v1/hotels/{LOCATION_A}").status_code == 401
+    assert not state["requests"]
+
+
+@pytest.mark.parametrize("missing", ["profile", "locations"])
+def test_hotel_writes_require_configured_operator(api, missing):
+    client, state = api
+    state[missing] = None if missing == "profile" else []
+    assert client.post("/api/v1/hotels", headers=HEADERS, json={"name": "Test"}).status_code == 403
+    assert client.delete(f"/api/v1/hotels/{LOCATION_A}", headers=HEADERS).status_code == 403
+    assert not any(r.url.path == "/rest/v1/hotels" for r in state["requests"])
+
+
+@pytest.mark.parametrize("code,status", [("42501", 403), ("PGRST205", 503), ("23505", 409)])
+def test_hotel_database_errors(api, code, status):
+    client, state = api
+    state["hotel_error"] = code
+    assert client.post("/api/v1/hotels", headers=HEADERS, json={"name": "Test"}).status_code == status
+
+
+
+def test_hotel_create_and_edit_discount(api):
+    client, _ = api
+    created = client.post("/api/v1/hotels", headers=HEADERS,
+                          json={"name": "Convenzionato", "discount": 15}).json()
+    assert created["discount"] == 15
+    response = client.patch(f"/api/v1/hotels/{created['id']}", headers=HEADERS,
+                            json={"discount": 12.5})
+    assert response.status_code == 200
+    assert response.json()["discount"] == 12.5
+    assert client.get("/api/v1/hotels", headers=HEADERS).json()[0]["discount"] == 12.5
+    assert client.delete(f"/api/v1/hotels/{created['id']}", headers=HEADERS).status_code == 204
+    response = client.patch(f"/api/v1/hotels/{created['id']}", headers=HEADERS,
+                            json={"discount": 10})
+    assert response.status_code == 404
+    restored = client.post("/api/v1/hotels", headers=HEADERS,
+                           json={"name": "Convenzionato", "discount": 20})
+    assert restored.json()["id"] == created["id"]
+    assert restored.json()["discount"] == 20
+
+
+@pytest.mark.parametrize("discount", [-1, 100.01, 12.345, None, "invalid"])
+def test_hotel_discount_validation(api, discount):
+    client, state = api
+    assert client.post("/api/v1/hotels", headers=HEADERS,
+                       json={"name": "Test", "discount": discount}).status_code == 422
+    assert client.patch(f"/api/v1/hotels/{LOCATION_A}", headers=HEADERS,
+                        json={"discount": discount}).status_code == 422
+    assert not any(r.method in ("POST", "PATCH") for r in state["requests"])
+
+
+@pytest.mark.parametrize("discount", [0, 100])
+def test_hotel_discount_boundaries(api, discount):
+    client, _ = api
+    response = client.post("/api/v1/hotels", headers=HEADERS,
+                           json={"name": "Test", "discount": discount})
+    assert response.status_code == 201
+    assert response.json()["discount"] == discount
+
+
+def test_hotel_discount_update_auth_and_scope(api):
+    client, state = api
+    path = f"/api/v1/hotels/{LOCATION_A}"
+    assert client.patch(path, json={"discount": 15}).status_code == 401
+    state["locations"] = []
+    assert client.patch(path, headers=HEADERS, json={"discount": 15}).status_code == 403
+    assert not any(r.method == "PATCH" for r in state["requests"])
+
+
+def test_hotel_discount_missing_migration(api):
+    client, state = api
+    state["hotel_error"] = "42703"
+    response = client.get("/api/v1/hotels", headers=HEADERS)
+    assert response.status_code == 503
+    assert "009" in response.json()["detail"]
+
+
+RATE_PRICES = {
+    "daily_price_1_day": 20, "daily_price_2_days": 18, "daily_price_3_days": 16,
+    "daily_price_4_days": None, "daily_price_5_days": 0, "daily_price_6_days": 12.5,
+    "daily_price_7_plus_days": 10,
+}
+
+
+def rate_row(index=1):
+    return {
+        "id": str(UUID(int=index)), "group_id": LOCATION_A, **RATE_PRICES,
+        "group": {"id": LOCATION_A, "name": "RACE",
+                  "category": {"id": LOCATION_A, "code": "ski", "name": "Sci"}},
+    }
+
+
+def test_rental_rates_list_all_pages_and_prices(api):
+    client, state = api
+    state["rates"] = [rate_row(index + 1) for index in range(1005)]
+    response = client.get("/api/v1/rental-rates", headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()["rates"]) == 1005
+    assert response.json()["rates"][0]["daily_price_5_days"] == 0
+    assert response.json()["rates"][0]["daily_price_4_days"] is None
+
+
+def test_rental_rate_update_preserves_daily_prices_and_can_clear_a_price(api):
+    client, state = api
+    state["rates"] = [rate_row()]
+    payload = {**RATE_PRICES, "daily_price_2_days": 17.5, "daily_price_7_plus_days": None}
+    response = client.patch(f"/api/v1/rental-rates/{rate_row()['id']}", headers=HEADERS, json=payload)
+    assert response.status_code == 200
+    assert response.json()["daily_price_2_days"] == 17.5
+    assert response.json()["daily_price_7_plus_days"] is None
+    assert response.json()["daily_price_5_days"] == 0
+    assert len(state["rates"]) == 1
+
+
+@pytest.mark.parametrize("price", [-1, 12.345, 10000000000, "invalid"])
+def test_rental_rate_rejects_invalid_prices(api, price):
+    client, state = api
+    response = client.patch(f"/api/v1/rental-rates/{LOCATION_A}", headers=HEADERS,
+                            json={**RATE_PRICES, "daily_price_1_day": price})
+    assert response.status_code == 422
+    assert not any(r.method == "PATCH" for r in state["requests"])
+
+
+def test_rental_rate_cannot_change_group_or_omit_columns(api):
+    client, _ = api
+    path = f"/api/v1/rental-rates/{LOCATION_A}"
+    assert client.patch(path, headers=HEADERS, json={**RATE_PRICES, "group_id": LOCATION_B}).status_code == 422
+    assert client.patch(path, headers=HEADERS, json={"daily_price_1_day": 10}).status_code == 422
+
+
+def test_rental_rates_require_login_and_configured_operator(api):
+    client, state = api
+    assert client.get("/api/v1/rental-rates").status_code == 401
+    assert client.patch(f"/api/v1/rental-rates/{LOCATION_A}", json=RATE_PRICES).status_code == 401
+    state["locations"] = []
+    assert client.get("/api/v1/rental-rates", headers=HEADERS).status_code == 403
+    assert client.patch(f"/api/v1/rental-rates/{LOCATION_A}", headers=HEADERS, json=RATE_PRICES).status_code == 403
+
+
+def test_rental_rates_report_missing_migration_and_missing_row(api):
+    client, state = api
+    state["rate_error"] = "PGRST205"
+    response = client.get("/api/v1/rental-rates", headers=HEADERS)
+    assert response.status_code == 503
+    assert "010" in response.json()["detail"]
+    del state["rate_error"]
+    assert client.patch(f"/api/v1/rental-rates/{LOCATION_A}", headers=HEADERS, json=RATE_PRICES).status_code == 404
+
+
+
+def test_rental_item_transfer_checks_both_locations_and_uses_atomic_rpc(api):
+    client, state = api
+    response = client.post(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{USER_ID}/transfer",
+                           headers=HEADERS, json={"destination_location_id": LOCATION_B})
+    assert response.status_code == 200
+    assert response.json() == {"id": USER_ID, "code": "+001",
+                               "from_location_id": LOCATION_A, "to_location_id": LOCATION_B}
+    checks = [r.url.params.get("location_id") for r in state["requests"]
+              if r.url.path == "/rest/v1/operator_locations"]
+    assert checks == [f"eq.{LOCATION_A}", f"eq.{LOCATION_B}"]
+    assert len([r for r in state["requests"] if r.method == "POST"]) == 1
+
+
+@pytest.mark.parametrize("source,target,status", [
+    (LOCATION_A, UNASSIGNED_LOCATION, 403),
+    (UNASSIGNED_LOCATION, LOCATION_B, 403),
+    (LOCATION_A, LOCATION_A, 422),
+])
+def test_rental_item_transfer_rejects_unauthorized_or_same_site(api, source, target, status):
+    client, state = api
+    response = client.post(f"/api/v1/locations/{source}/rental-inventory/{USER_ID}/transfer",
+                           headers=HEADERS, json={"destination_location_id": target})
+    assert response.status_code == status
+    assert not any(r.method == "POST" for r in state["requests"])
+
+
+@pytest.mark.parametrize("code,status", [("PGRST202", 503), ("42501", 403), ("P0002", 404),
+                                        ("23514", 409), ("55000", 409)])
+def test_rental_item_transfer_database_guards(api, code, status):
+    client, state = api
+    state["transfer_error"] = code
+    response = client.post(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{USER_ID}/transfer",
+                           headers=HEADERS, json={"destination_location_id": LOCATION_B})
+    assert response.status_code == status
+    if code == "PGRST202":
+        assert "011" in response.json()["detail"]
+
+
+def test_rental_item_transfer_requires_login_and_valid_payload(api):
+    client, state = api
+    path = f"/api/v1/locations/{LOCATION_A}/rental-inventory/{USER_ID}/transfer"
+    assert client.post(path, json={"destination_location_id": LOCATION_B}).status_code == 401
+    assert client.post(path, headers=HEADERS, json={"destination_location_id": "invalid"}).status_code == 422
+    assert client.post(path, headers=HEADERS, json={"destination_location_id": LOCATION_B,
+                       "code": "overwrite"}).status_code == 422
+    assert not any(r.method == "POST" for r in state["requests"])

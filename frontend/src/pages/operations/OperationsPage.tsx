@@ -1,4 +1,5 @@
 import { CalendarPlus, ShoppingCart } from 'lucide-react';
+import { RentalCustomerPage } from './RentalCustomerPage';
 
 const workflows = {
   rental: {
@@ -26,6 +27,7 @@ const workflows = {
 };
 
 export function OperationsPage({ mode }: { mode: keyof typeof workflows }) {
+  if (mode === 'rental') return <RentalCustomerPage />;
   const workflow = workflows[mode];
   const Icon = workflow.icon;
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RentalInventoryPage } from './RentalInventoryPage';
 import type { RentalInventory, RentalItem } from './rental-inventory';
 
-const mocks = vi.hoisted(() => ({ apiGet: vi.fn(), apiPost: vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' } } }));
+const mocks = vi.hoisted(() => ({ apiGet: vi.fn(), apiPost: vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' }, operator: { locations: [{ id: 'site-a', name: 'Madesimo' }, { id: 'site-b', name: 'Seconda sede' }] } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
 vi.mock('../../lib/api', () => ({ apiGet: mocks.apiGet, apiPost: mocks.apiPost }));
 
@@ -24,7 +24,7 @@ beforeEach(() => {
   mocks.apiGet.mockReset().mockResolvedValue(inventory);
   mocks.apiPost.mockReset();
   mocks.auth.location = { id: 'site-a', name: 'Madesimo' };
-  HTMLDialogElement.prototype.showModal = vi.fn();
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); });
 });
 
 describe('Magazzino noleggio', () => {
@@ -81,6 +81,43 @@ describe('Magazzino noleggio', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salva articolo' }));
     await screen.findByText('Articolo NEW001 salvato nel magazzino di Madesimo.');
     await screen.findByText('1 variante · 3 articoli');
+  });
+
+  it('transfers one code to another authorized location and reloads the warehouse', async () => {
+    mocks.apiPost.mockResolvedValue({ id: 'unit-1', code: '+001', from_location_id: 'site-a', to_location_id: 'site-b' });
+    render(<RentalInventoryPage />);
+    await screen.findByText('ANOMALY');
+    fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta +001 di sede' }));
+    const destination = screen.getByLabelText('Sede di destinazione') as HTMLSelectElement;
+    expect([...destination.options].map((entry) => entry.value)).toEqual(['', 'site-b']);
+    fireEvent.change(destination, { target: { value: 'site-b' } });
+    mocks.apiGet.mockResolvedValue({ ...inventory, items: [inventory.items[1]] });
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma spostamento' }));
+    await screen.findByText('Articolo +001 spostato da Madesimo a Seconda sede.');
+    await screen.findByText('1 variante · 1 articolo');
+    expect(mocks.apiPost).toHaveBeenCalledWith('/locations/site-a/rental-inventory/unit-1/transfer', 'token', { destination_location_id: 'site-b' }, expect.any(AbortSignal));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps the article in place on transfer errors and blocks double submissions', async () => {
+    let fail!: (error: Error) => void;
+    mocks.apiPost.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    render(<RentalInventoryPage />);
+    await screen.findByText('ANOMALY');
+    fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta +001 di sede' }));
+    fireEvent.change(screen.getByLabelText('Sede di destinazione'), { target: { value: 'site-b' } });
+    const confirm = screen.getByRole('button', { name: 'Conferma spostamento' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(mocks.apiPost).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole('button', { name: 'Chiudi scheda materiale' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => fail(new Error('Articolo assegnato a un noleggio aperto')));
+    await screen.findByRole('alert');
+    expect(screen.getByText('+001')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Conferma spostamento' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla spostamento' }));
+    expect(screen.queryByLabelText('Sede di destinazione')).toBeNull();
   });
 
   it('shows backend errors and retries', async () => {
