@@ -13,3 +13,6 @@ htmlcov/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Importazioni clienti generate: contengono dati personali.
+/private/customer-imports/

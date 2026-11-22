@@ -5,24 +5,33 @@ import type { FormEvent } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import { apiGet, apiPost } from '../../lib/api';
 import { normalizeCustomerText } from '../customers/customer';
-import type { Customer } from '../customers/customer';
+import { skillLevels } from '../customers/customer';
+import type { Customer, SkillLevel } from '../customers/customer';
 import { RentalPeriodFields } from './RentalPeriodFields';
 import type { RentalPeriod } from './RentalPeriodFields';
 import { RentalSection } from './RentalSection';
 import { RentalEquipmentSection } from './RentalEquipmentSection';
 import type { RentalItem } from '../inventory/rental-inventory';
+import { RentalRecapSection } from './RentalRecapSection';
+import type { RentalQuote } from './RentalRecapSection';
+import { RentalPaymentSection } from './RentalPaymentSection';
+import { emptyPayment, paymentSummary } from './rental-payment';
+import type { RentalPaymentDraft } from './rental-payment';
+import { RentalBookingSuccess } from './RentalBookingSuccess';
+import type { SavedBooking } from './RentalBookingSuccess';
 
-type CustomerValues = { first_name: string; last_name: string; email: string; phone: string; notes: string };
-const emptyValues: CustomerValues = { first_name: '', last_name: '', email: '', phone: '', notes: '' };
+type CustomerValues = { first_name: string; last_name: string; email: string; phone: string; notes: string; birth_date: string; skill_level: SkillLevel | ''; language: string; country_code: string };
+const emptyValues: CustomerValues = { first_name: '', last_name: '', email: '', phone: '', notes: '', birth_date: '', skill_level: '', language: '', country_code: '' };
 
 export function RentalCustomerPage() {
   const { session, location } = useAuth();
+  const [revision, setRevision] = useState(0);
   return session
-    ? <RentalCustomerForm key={`${session.access_token}:${location?.id}`} token={session.access_token} locationId={location?.id} locationName={location?.name} />
+    ? <RentalCustomerForm key={`${session.access_token}:${location?.id}:${revision}`} token={session.access_token} locationId={location?.id} locationName={location?.name} onNew={() => setRevision((current) => current + 1)} />
     : <p role="status">Accedi per iniziare un noleggio.</p>;
 }
 
-function RentalCustomerForm({ token, locationId, locationName }: { token: string; locationId?: string; locationName?: string }) {
+function RentalCustomerForm({ token, locationId, locationName, onNew }: { token: string; locationId?: string; locationName?: string; onNew: () => void }) {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -34,6 +43,20 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
   const [registered, setRegistered] = useState(false);
   const [period, setPeriod] = useState<RentalPeriod>({ starts_on: '', ends_on: '', hotel: '' });
   const [equipment, setEquipment] = useState<RentalItem[]>([]);
+  const [quote, setQuote] = useState<RentalQuote | null>(null);
+  const [payment, setPayment] = useState<RentalPaymentDraft>(emptyPayment);
+  const [bookingNotes, setBookingNotes] = useState('');
+  const [bookingId] = useState(() => crypto.randomUUID());
+  const [confirmed, setConfirmed] = useState<SavedBooking | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const confirmRequest = useRef<AbortController | null>(null);
+  const confirmInFlight = useRef(false);
+  const quoteMatches = !!(selected && quote && quote.starts_on === period.starts_on && quote.ends_on === period.ends_on
+    && (quote.hotel?.id || '') === period.hotel && quote.items.length === equipment.length
+    && equipment.every((item) => quote.items.some((line) => line.inventory_id === item.id)));
+  const currentTotal = quoteMatches ? quote!.total : null;
+  const paymentState = paymentSummary(payment, currentTotal);
   const submitting = useRef(false);
   const saveRequest = useRef<AbortController | null>(null);
   const firstNameInput = useRef<HTMLInputElement>(null);
@@ -51,6 +74,7 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
   }, [token, attempt]);
 
   useEffect(() => () => saveRequest.current?.abort(), []);
+  useEffect(() => () => confirmRequest.current?.abort(), []);
   useEffect(() => { if (isNew) firstNameInput.current?.focus(); }, [isNew]);
 
   const surname = normalizeCustomerText(values.last_name.trim());
@@ -60,7 +84,7 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
 
   function selectCustomer(customer: Customer, wasRegistered = false) {
     setSelected(customer);
-    setValues({ first_name: customer.first_name, last_name: customer.last_name, email: customer.email || '', phone: customer.phone || '', notes: customer.notes || '' });
+    setValues({ first_name: customer.first_name, last_name: customer.last_name, email: customer.email || '', phone: customer.phone || '', notes: customer.notes || '', birth_date: customer.birth_date || '', skill_level: customer.skill_level || '', language: customer.language || '', country_code: customer.country_code || '' });
     setIsNew(false); setRegistered(wasRegistered); setSaveError('');
   }
 
@@ -80,6 +104,8 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
       const customer = await apiPost<Customer>('/customers', token, {
         first_name: values.first_name.trim(), last_name: values.last_name.trim(),
         email: values.email.trim() || null, phone: values.phone.trim() || null, notes: values.notes.trim() || null,
+        birth_date: values.birth_date || null, skill_level: values.skill_level || null,
+        language: values.language.trim().toUpperCase() || null, country_code: values.country_code.trim().toUpperCase() || null,
       }, controller.signal);
       if (!controller.signal.aborted) {
         setCustomers((current) => [...(current || []), customer]);
@@ -92,17 +118,43 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
     }
   }
 
+  async function confirmBooking() {
+    if (confirmInFlight.current || !selected || !locationId || !paymentState.complete || currentTotal === null) return;
+    confirmInFlight.current = true; setConfirming(true); setConfirmError('');
+    const controller = new AbortController(); confirmRequest.current = controller;
+    try {
+      const booking = await apiPost<SavedBooking>(`/locations/${locationId}/rental-bookings`, token, {
+        booking_id: bookingId, customer_id: selected.id, starts_on: period.starts_on, ends_on: period.ends_on,
+        hotel_id: period.hotel || null, inventory_ids: equipment.map((item) => item.id), expected_total: currentTotal,
+        notes: bookingNotes.trim() || null,
+        payment: paymentState.amountCents! > 0 ? {
+          amount: (paymentState.amountCents! / 100).toFixed(2), payment_method: paymentState.method,
+          paid_at_local: payment.paid_at_local, notes: payment.notes.trim() || null,
+        } : null,
+      }, controller.signal);
+      if (!controller.signal.aborted) setConfirmed(booking);
+    } catch (cause) {
+      if (!controller.signal.aborted) setConfirmError(cause instanceof Error ? cause.message : 'Impossibile confermare il noleggio.');
+    } finally {
+      if (!controller.signal.aborted) { confirmInFlight.current = false; setConfirming(false); }
+    }
+  }
+
+  if (confirmed && selected) return <RentalBookingSuccess booking={confirmed} customer={selected} onNew={onNew} />;
+
   return (
     <div className="dashboard-page rental-customer-page">
       <div className="dashboard-heading"><div>
         <div className="page-heading"><span className="heading-icon"><CalendarPlus size={21} aria-hidden="true" /></span><h1>Nuovo noleggio</h1></div>
-        <p className="page-description">Inizia dal cliente: cerca una persona già registrata oppure aggiungine una nuova.</p>
+        <p className="page-description">Compila cliente e soggiorno, aggiungi il materiale e conferma il noleggio.</p>
       </div></div>
 
-      <RentalSection id="rental-customer" step={1} title="Dati del cliente" complete={!!selected}>
+      <fieldset className="rental-booking-fields rental-booking-sheet" disabled={confirming}>
+      <div className="rental-booking-overview">
+      <RentalSection id="rental-customer" title="Dati del cliente">
         <form className="rental-customer-body" onSubmit={saveCustomer}>
-          <div className="rental-form-grid">
-            <label className="rental-form-wide">Cognome *
+          <div className="rental-form-grid rental-customer-fields">
+            <label>Cognome *
               <input ref={lastNameInput} required maxLength={200} autoComplete="family-name" value={values.last_name} readOnly={!!selected} disabled={saving} onChange={(event) => { setValues({ ...values, last_name: event.target.value }); setSaveError(''); }} aria-describedby={!selected && !isNew ? 'rental-customer-search-hint' : undefined} />
             </label>
 
@@ -124,11 +176,16 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
             {(selected || isNew) && <>
               <label>Nome *<input ref={firstNameInput} required maxLength={200} autoComplete="given-name" readOnly={!!selected} disabled={saving} value={values.first_name} onChange={(event) => setValues({ ...values, first_name: event.target.value })} /></label>
               <label>Cellulare<input type="tel" maxLength={100} autoComplete="tel" readOnly={!!selected} disabled={saving} value={values.phone} onChange={(event) => setValues({ ...values, phone: event.target.value })} /></label>
-              <label className="rental-form-wide">Email<input type="email" maxLength={254} autoComplete="email" readOnly={!!selected} disabled={saving} value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} /></label>
-              <label className="rental-form-wide">Note cliente<textarea maxLength={5000} readOnly={!!selected} disabled={saving} value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} /></label>
+              <label>Email<input type="email" maxLength={254} autoComplete="email" readOnly={!!selected} disabled={saving} value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} /></label>
             </>}
           </div>
 
+          {(isNew || (selected && [selected.birth_date, selected.skill_level, selected.language, selected.country_code].some(Boolean))) && <div className="rental-form-grid rental-customer-fields rental-customer-extra-fields">
+            <label>Data di nascita<input type="date" value={values.birth_date} readOnly={!!selected} disabled={saving} onChange={(event) => setValues({ ...values, birth_date: event.target.value })} /></label>
+            <label>Livello<select value={values.skill_level} disabled={saving || !!selected} onChange={(event) => setValues({ ...values, skill_level: event.target.value as SkillLevel | '' })}><option value="">Non indicato</option>{Object.entries(skillLevels).map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
+            <label>Lingua (codice)<input maxLength={2} pattern="[A-Za-z]{2}" placeholder="IT" value={values.language} readOnly={!!selected} disabled={saving} onChange={(event) => setValues({ ...values, language: event.target.value.toUpperCase() })} /></label>
+            <label>Paese (codice)<input maxLength={2} pattern="[A-Za-z]{2}" placeholder="IT" value={values.country_code} readOnly={!!selected} disabled={saving} onChange={(event) => setValues({ ...values, country_code: event.target.value.toUpperCase() })} /></label>
+          </div>}
           {saveError && <p className="auth-error" role="alert">{saveError}</p>}
           {selected && <div className="rental-customer-selected" role="status"><Check size={20} aria-hidden="true" /><div><strong>{registered ? 'Cliente registrato e selezionato' : 'Cliente selezionato'}</strong><p>{selected.first_name} {selected.last_name}</p></div></div>}
           {(selected || isNew) && <div className="rental-customer-actions">
@@ -138,7 +195,20 @@ function RentalCustomerForm({ token, locationId, locationName }: { token: string
         </form>
       </RentalSection>
       <RentalPeriodFields value={period} onChange={setPeriod} />
-      <RentalEquipmentSection token={token} locationId={locationId} locationName={locationName} selected={equipment} onAdd={(item) => setEquipment((current) => current.some((entry) => entry.id === item.id) ? current : [...current, item])} onRemove={(id) => setEquipment((current) => current.filter((item) => item.id !== id))} />
+      </div>
+      <div className="rental-form-grid rental-booking-notes-row">
+        {(selected || isNew) && <label>Note cliente<textarea maxLength={5000} readOnly={!!selected} disabled={saving} value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} /></label>}
+        <label>Note prenotazione<textarea maxLength={5000} value={bookingNotes} onChange={(event) => setBookingNotes(event.target.value)} placeholder="Annotazioni per questo noleggio (facoltative)" /></label>
+      </div>
+      <RentalEquipmentSection startsOn={period.starts_on} endsOn={period.ends_on} token={token} locationId={locationId} locationName={locationName} selected={equipment} onAdd={(item) => setEquipment((current) => current.some((entry) => entry.id === item.id) ? current : [...current, item])} onRemove={(id) => setEquipment((current) => current.filter((item) => item.id !== id))} />
+      <RentalRecapSection token={token} locationId={locationId} customer={selected} period={period} equipment={equipment} onQuoteChange={setQuote} bookingNotes={bookingNotes} />
+      <RentalPaymentSection total={currentTotal} value={payment} onChange={setPayment} />
+      <div className="rental-booking-confirm">
+        {confirmError && <p className="auth-error" role="alert">{confirmError}</p>}
+        {!paymentState.complete && <p className="rental-form-hint">Completa cliente, periodo, materiale, prezzi e scelta del pagamento per confermare.</p>}
+        <button className="sales-button sales-button-primary" type="button" disabled={confirming || !paymentState.complete || !selected || !locationId} onClick={() => void confirmBooking()}>{confirming ? 'Conferma in corso…' : 'Conferma noleggio'}</button>
+      </div>
+      </fieldset>
     </div>
   );
 }

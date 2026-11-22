@@ -277,6 +277,40 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .rental-customer-body { padding: 24px; }
 .rental-period-panel { margin-top: 24px; }
 .rental-equipment-panel { margin-top: 24px; }
+.rental-recap-panel { margin-top: 24px; }
+.rental-payment-panel { margin-top: 24px; }
+.rental-booking-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.rental-booking-confirm { margin-top: 24px; text-align: right; }
+.rental-booking-notes { margin: 20px 0; color: #475569; font-size: 13px; }
+.rental-booking-notes h3 { font-size: 13px; margin: 0 0 8px; }
+.rental-booking-notes p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.sale-dialog.rental-history-dialog { width: min(1120px, calc(100vw - 32px)); }
+.history-bookings-table { min-width: 1080px; }
+.history-items-table { min-width: 850px; }
+.history-payments-table { min-width: 700px; }
+.history-filters { flex-wrap: wrap; }
+.history-date-filter { display: flex; align-items: center; gap: 7px; color: #64748b; font-size: 12px; }
+.history-date-filter input { padding: 8px; border: 1px solid #c7d2fe; border-radius: 9px; background: white; color: #4338ca; font: inherit; }
+.history-notes { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+.history-reference { max-width: 200px; overflow-wrap: anywhere; }
+.history-pagination { padding: 16px 24px; }
+.history-metadata { margin-top: 20px; font-size: 12px; color: #64748b; }
+.history-metadata summary { cursor: pointer; padding-block: 10px; }
+.history-metadata dd { overflow-wrap: anywhere; }
+.rental-payment-options { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; border: 0; }
+.rental-payment-options legend { margin-bottom: 14px; font-size: 14px; font-weight: 600; color: #475569; }
+.rental-payment-options label { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border: 1px solid #dbe0eb; border-radius: 12px; color: #475569; cursor: pointer; font-size: 13px; }
+.rental-payment-options label.is-selected { background: #eef2ff; border-color: #818cf8; color: #4338ca; }
+.rental-payment-options input { accent-color: #4f46e5; }
+.rental-payment-fields { margin-top: 22px; }
+.rental-payment-issues { margin-top: 16px; padding: 12px 16px; border-radius: 10px; background: #fff7ed; color: #9a3412; font-size: 12px; line-height: 1.6; }
+.rental-payment-issues p { margin: 4px 0; }
+.rental-recap-details { margin-bottom: 24px; }
+.rental-recap-table { min-width: 850px; }
+.rental-recap-totals { max-width: 430px; margin: 24px 0 24px auto; }
+.rental-recap-totals > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; color: #475569; font-size: 13px; }
+.rental-recap-totals dd { margin: 0; font-weight: 600; text-align: right; }
+.rental-recap-totals > .rental-recap-total { border-top: 1px solid #c7d2fe; color: #4338ca; font-size: 18px; font-weight: 650; }
 .rental-equipment-description { margin: 0 0 20px; color: #64748b; font-size: 12px; line-height: 1.7; }
 .rental-form-grid.rental-equipment-code { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 .rental-equipment-manual-toggle { margin-top: 18px; }
@@ -288,17 +322,6 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .rental-equipment-pagination > div { display: flex; gap: 8px; }
 .rental-equipment-availability { margin-bottom: 0; margin-top: 20px; }
 @media (max-width: 580px) { .rental-form-grid.rental-equipment-code { grid-template-columns: minmax(0, 1fr); } }
-.rental-section > .rentals-panel-heading { padding: 0; }
-.rental-section.is-complete { border-color: #16a34a; box-shadow: 0 0 0 1px #16a34a; }
-.rental-section > .rentals-panel-heading h2 { width: 100%; }
-.rental-section-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 24px 24px 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
-.rental-section-toggle[aria-expanded="false"] { padding-bottom: 24px; }
-.rental-section-toggle > span:nth-child(2) { flex: 1; }
-.rental-section-toggle > svg { flex-shrink: 0; color: #6366f1; }
-.rental-section-toggle[aria-expanded="false"] > svg { transform: rotate(-90deg); }
-.rental-section-toggle:focus-visible { outline: 2px solid #818cf8; outline-offset: -4px; border-radius: 16px; }
-@media (max-width: 479px) { .rental-section-toggle { padding: 18px 18px 0; } .rental-section-toggle[aria-expanded="false"] { padding-bottom: 18px; } }
-.rental-customer-step { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: 8px; border-radius: 9px; background: #eef2ff; color: #4f46e5; font-size: 13px; }
 .rental-customer-search > .rental-form-hint { margin: 0 0 16px; }
 .rental-customer-results-count { margin: 0 0 12px; font-size: 12px; color: #64748b; }
 .rental-customer-results { max-height: 300px; overflow-y: auto; margin: 0 0 16px; padding: 0; list-style: none; border: 1px solid #e0e7ff; border-radius: 12px; }
@@ -432,3 +455,156 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .rental-form-check input { width: 17px; height: 17px; accent-color: #6366f1; }
 .sales-button.rental-create-submit { background: #4f46e5; color: white; border-color: #4f46e5; }
 @media (max-width: 580px) { .rental-form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.return-code-label { display: grid; gap: 8px; margin-top: 20px; font-weight: 600; }
+.return-code-label input { padding: 12px; border: 1px solid var(--border, #d9dce6); border-radius: 10px; font: inherit; }
+.return-dialog.return-state-red { border: 2px solid #dc2626; }
+.return-dialog.return-state-yellow { border: 2px solid #ca8a04; }
+.return-dialog.return-state-green { border: 2px solid #16a34a; }
+.return-state-banner { padding: 16px; border-radius: 12px; margin-bottom: 20px; }
+.return-state-banner p { margin: 6px 0 0; }
+.return-state-banner.return-state-red { background: #fef2f2; color: #991b1b; }
+.return-state-banner.return-state-yellow { background: #fefce8; color: #854d0e; }
+.return-state-banner.return-state-green { background: #f0fdf4; color: #166534; }
+
+.return-latest-booking { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+.return-latest-booking > p { color: #166534; }
+.return-bookings-section {
+  margin-top: 32px;
+  border: 2px solid var(--return-color);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 22px -14px var(--return-color);
+}
+.return-section-red { --return-color: rgb(220 38 38 / 45%); --return-text: #7f1d1d; --return-surface: #fff1f2; }
+.return-section-yellow { --return-color: rgb(250 204 21 / 45%); --return-text: #713f12; --return-surface: #fefce8; }
+.return-section-green { --return-color: rgb(21 128 61 / 45%); --return-text: #14532d; --return-surface: #f0fdf4; }
+.return-bookings-section .rentals-panel-heading {
+  padding: 22px 24px;
+  flex-wrap: wrap;
+  background: var(--return-color);
+  color: var(--return-text);
+}
+.return-bookings-section .rentals-panel-heading h2 { color: inherit; font-weight: 700; }
+.return-bookings-section .rentals-count {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid currentColor;
+  background: rgb(255 255 255 / 18%);
+  color: inherit;
+  font-weight: 600;
+}
+.return-bookings-section .rentals-table thead { background: var(--return-surface); }
+@media (max-width: 580px) {
+  .return-bookings-section { margin-top: 24px; }
+  .return-bookings-section .rentals-panel-heading { padding: 18px; gap: 12px; }
+}
+
+/* Stati dello storico: coerenti con materiale rientrato e saldo. */
+.history-status-confirmed { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.history-status-preparing { background: #ede9fe; border-color: #c4b5fd; color: #6b21a8; }
+.history-status-active { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+.history-status-awaiting_payment { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+.history-status-completed { background: #dcfce7; border-color: #86efac; color: #166534; }
+.history-status-cancelled { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+
+/* Scheda unica del nuovo noleggio. */
+.rental-booking-sheet {
+  padding: 28px;
+  border: 1px solid #dddff0;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 35px -25px rgb(49 46 129 / 25%);
+  font-size: 15px;
+}
+.rental-booking-overview { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.rental-booking-overview > .rental-section { margin: 0; min-width: 0; }
+.rental-booking-sheet > .rental-section { margin: 28px 0 0; padding-top: 28px; border-top: 1px solid #e2e8f0; min-width: 0; }
+.rental-section > h2 { margin: 0; color: #252c45; font-size: 20px; font-weight: 650; letter-spacing: -0.3px; }
+.rental-booking-sheet .rental-customer-body { padding: 20px 0 0; }
+.rental-booking-sheet .rental-form-grid label { font-size: 14px; }
+.rental-booking-sheet .rental-form-grid input,
+.rental-booking-sheet .rental-form-grid select,
+.rental-booking-sheet .rental-form-grid textarea { font-size: 15px; padding: 12px 14px; }
+.rental-booking-sheet .rental-form-hint,
+.rental-booking-sheet .rental-form-grid small,
+.rental-booking-sheet .rental-equipment-description,
+.rental-booking-sheet .rental-equipment-message,
+.rental-booking-sheet .rental-equipment-pagination,
+.rental-booking-sheet .rental-customer-results-count,
+.rental-booking-sheet .rental-customer-result > span > span { font-size: 13px; }
+.rental-booking-sheet .sales-button,
+.rental-booking-sheet .rental-payment-options label,
+.rental-booking-sheet .rental-customer-selected,
+.rental-booking-sheet .rental-customer-result strong,
+.rental-booking-sheet .rental-booking-notes,
+.rental-booking-sheet .rental-booking-notes h3,
+.rental-booking-sheet .rental-recap-totals > div { font-size: 14px; }
+.rental-booking-sheet .rentals-table { font-size: 14px; }
+.rental-booking-sheet .rentals-table thead th { font-size: 12px; }
+.rental-booking-sheet .rental-primary { font-size: 14px; }
+.rental-booking-sheet .rental-secondary { font-size: 13px; }
+.rental-booking-sheet .rental-equipment-selected-title { font-size: 16px; }
+.rental-booking-sheet .rental-recap-totals > .rental-recap-total { font-size: 20px; }
+.rental-booking-sheet .rental-booking-confirm { padding-top: 24px; border-top: 1px solid #e2e8f0; }
+@media (max-width: 960px) {
+  .rental-booking-overview { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+@media (max-width: 580px) {
+  .rental-booking-sheet { padding: 20px 16px; }
+  .rental-booking-sheet .rental-booking-confirm .sales-button { width: 100%; }
+}
+
+.rental-booking-sheet .sale-details-grid dt { font-size: 13px; }
+.rental-booking-sheet .sale-details-grid dd { font-size: 15px; }
+.rental-booking-sheet .rental-payment-options legend { font-size: 15px; }
+.rental-booking-sheet .rental-payment-issues { font-size: 14px; }
+
+/* Disposizione compatta: più campi affiancati, note su una riga separata. */
+.rental-customer-page { max-width: none; }
+.rental-booking-sheet { padding: 24px; }
+.rental-booking-overview { grid-template-columns: minmax(0, 4fr) minmax(0, 3fr); gap: 24px; }
+.rental-customer-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.rental-period-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rental-booking-sheet .rental-form-grid input,
+.rental-booking-sheet .rental-form-grid select { padding: 10px 12px; }
+.rental-booking-notes-row { margin-top: 20px; gap: 24px; }
+.rental-booking-sheet .rental-booking-notes-row textarea { min-height: 60px; }
+.rental-booking-sheet .rental-customer-selected { display: inline-flex; margin-top: 14px; padding: 8px 12px; gap: 8px; }
+.rental-booking-sheet .rental-customer-selected > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rental-booking-sheet .rental-customer-selected p { margin: 0; }
+.rental-booking-sheet .rental-customer-actions { display: inline-flex; margin-top: 14px; margin-left: 12px; gap: 8px; }
+.rental-booking-sheet .rental-payment-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rental-booking-sheet .rental-payment-fields .rental-form-wide:has(input[type="datetime-local"]) { grid-column: auto; }
+@media (max-width: 1400px) {
+  .rental-booking-overview { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+}
+@media (max-width: 760px) {
+  .rental-customer-fields,
+  .rental-period-fields,
+  .rental-booking-sheet .rental-payment-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rental-hotel-field { grid-column: 1 / -1; }
+  .rental-booking-sheet .rental-customer-actions { margin-left: 0; }
+}
+@media (max-width: 580px) {
+  .rental-booking-sheet { padding: 20px 16px; }
+  .rental-customer-fields,
+  .rental-period-fields,
+  .rental-booking-notes-row,
+  .rental-booking-sheet .rental-payment-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
+.customers-table { min-width: 1180px; }
+.rental-customer-extra-fields { margin-top: 16px; }
+
+.customers-table .customer-actions-cell { position: sticky; right: 0; background: #fff; z-index: 1; min-width: 92px; box-shadow: -5px 0 10px -10px #64748b; }
+.customers-table thead .customer-actions-cell { background: #f0f1fa; z-index: 2; }
+.customer-delete-button { color: #be123c; }
+.customer-delete-button:hover { background: #fff1f2; }
+.sales-button.customer-delete-confirm { background: #be123c; border-color: #be123c; color: #fff; }
+.customer-action-notice { padding: 12px 16px; border-radius: 10px; background: #f0fdf4; color: #166534; }
+
+.sale-dialog.customer-bookings-dialog { width: min(1050px, calc(100vw - 32px)); }
+.customer-bookings-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 24px; padding: 16px; border-radius: 12px; background: #eef2ff; color: #4338ca; }
+.customer-bookings-summary strong { font-size: 20px; }
+.customer-bookings-summary > span { margin-left: auto; font-size: 13px; color: #64748b; }

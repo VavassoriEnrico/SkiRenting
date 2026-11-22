@@ -229,8 +229,8 @@ In Gestione → Alberghi si può indicare lo sconto in creazione e modificarlo c
 `PATCH /api/v1/hotels/{id}`. L'API accetta al massimo due cifre decimali e rifiuta
 valori mancanti, negativi o superiori a 100. Riattivare un albergo rimosso tramite
 il modulo di creazione applica lo sconto indicato nel modulo alla stessa voce.
-Il collegamento della convenzione al calcolo del totale del noleggio rimane da
-implementare: il futuro salvataggio dovrà copiare lo sconto effettivamente applicato
+La convenzione viene letta nel riepilogo prezzi: il futuro salvataggio dovrà
+copiare lo sconto effettivamente applicato
 in `rental_bookings.discount_percent`, senza cambiare le prenotazioni storiche.
 
 ## Listino noleggio per tipo di materiale
@@ -240,7 +240,8 @@ Eseguire **tutto** `010_rental_rates.sql` una volta, dopo 001 e 002. Crea
 `daily_price_1_day`, `daily_price_2_days`, `daily_price_3_days`, `daily_price_4_days`,
 `daily_price_5_days`, `daily_price_6_days`, `daily_price_7_plus_days`.
 Sono importi giornalieri, non totali: per 8 giorni si userà la tariffa 7+ moltiplicata
-per 8. Le regole di conteggio del periodo e il calcolo della prenotazione restano da collegare.
+per 8. Il riepilogo conta inizio e rientro inclusi e calcola gli importi sul backend;
+il salvataggio della prenotazione resta da collegare.
 
 Le righe dei gruppi esistenti vengono predisposte con prezzi null, mai dedotti dai
 PDF. Null significa da configurare, zero significa gratuito. Ogni nuovo gruppo
@@ -287,3 +288,116 @@ Lo storico è leggibile dagli operatori assegnati ad almeno una delle due sedi.
 Test API/frontend eseguiti con Supabase simulato; query da applicare e verificare
 sul progetto reale. Il trasferimento riguarda solo il magazzino noleggio, che è
 quello attualmente collegato ai dati reali.
+
+## Conferma atomica del noleggio
+
+Eseguire tutto `012_confirm_rental_booking.sql` dopo 007, 009 e 010. Aggiunge
+`confirmation_hash` alla prenotazione e la funzione autorizzata di conferma.
+Non importa dati e non conferma automaticamente le bozze esistenti.
+
+La funzione verifica operatore, sede, cliente, materiale, listino e sconto. Blocca
+gli esemplari prima di controllare prenotazioni sovrapposte o consegne non rientrate,
+usando lo stesso lock del trasferimento 011. Ricalcola prezzi, durata inclusiva e
+totale; se il totale è cambiato rifiuta la conferma e richiede di aggiornare i prezzi.
+Salva insieme testata, righe con copie storiche e pagamento facoltativo; ogni errore
+annulla tutti gli inserimenti. Gli articoli mantengono il loro codice e stato fisico:
+è la prenotazione a occupare il periodo, senza disabilitarli per tutte le date.
+
+L'ID della bozza impedisce duplicazioni nei ritentativi; un'impronta JSON distingue
+la stessa richiesta da dati cambiati dopo una conferma già riuscita. Il risultato
+restituisce numero prenotazione, totale, pagato e residuo. Il frontend mostra la
+conferma ricevuta prima di permettere un nuovo noleggio con una nuova bozza.
+
+Script e vincoli sono stati verificati su PostgreSQL temporaneo, inclusi pagamenti,
+ritentativi, rollback e due connessioni concorrenti. L'applicazione della query al
+Supabase reale resta manuale. Lo storico legge le tabelle esistenti tramite API
+in sola lettura, senza ulteriori migrazioni. Modifiche, annullamenti, vendite e rientri
+non vengono collegati da questa query.
+
+La conferma accetta anche `notes` facoltative, fino a 5.000 caratteri, salvate
+in `rental_bookings.notes` (colonna già creata da 007). Le note cliente e pagamento
+restano distinte. La versione aggiornata di 012 può essere rieseguita per aggiornare
+la funzione senza ricreare tabelle o cancellare prenotazioni. I payload senza note
+mantengono la compatibilità dei ritentativi con le conferme precedenti.
+
+
+## 013 — Rientro per codice
+
+Eseguire tutto `013_register_rental_return.sql` dopo 012. Script rieseguibile:
+aggiunge returned_by, un registro interno per i ritentativi e la funzione
+`skirenting_register_rental_return(location_id, request_id, code)`.
+Senza consegne separate, returned_at può esistere anche senza delivered_at;
+se presente, delivered_at non può essere successivo al rientro.
+La funzione usa il codice esatto dell'esemplare nella sede, cerca un'unica
+prenotazione aperta con inizio non futuro e registra il solo articolo riconsegnato.
+Blocca esemplare e prenotazione, usando lo stesso ordine della conferma/trasferimento.
+Le restituzioni concorrenti della stessa prenotazione vengono serializzate.
+Rientro completo e saldo coperto danno completed; altrimenti active.
+Non inserisce pagamenti e non cambia lo stato fisico dell'inventario.
+Il frontend mostra rosso/giallo/verde in base a materiale mancante e saldo.
+Eseguire manualmente sul progetto Supabase: preparare il file non applica la migrazione.
+
+
+## 014 — Pagamento del saldo nei rientri
+
+Eseguire tutto `014_register_rental_payment.sql` dopo 013. La funzione
+`skirenting_register_rental_payment(location_id, booking_id, payment_id, data)`
+registra pagamenti manuali per prenotazioni con materiale tutto rientrato.
+Non crea altre tabelle: l'ID della riga rental_payments garantisce i ritentativi.
+Il lock sulla prenotazione impedisce di superare il residuo in caso di pagamenti
+simultanei. Totale e saldo derivano da righe storiche, sconto e pagamenti già salvati.
+Saldo parziale mantiene active; saldo completo imposta completed, visibile verde.
+Sono richieste membership alla sede e identità operatore; nessun grant di INSERT
+o UPDATE diretto viene aggiunto. La funzione è rieseguibile con CREATE OR REPLACE.
+
+La versione aggiornata di 014 consente pagamenti anche con status completed,
+se tutto il materiale è rientrato e il saldo è ancora positivo. Lo stato completed
+viene conservato anche dopo un versamento parziale. Gli annullati restano bloccati.
+Se 014 era già applicata, rieseguire tutto il file per aggiornare la funzione,
+senza modificare prenotazioni o pagamenti esistenti.
+
+
+## 015 — Dati anagrafici aggiuntivi
+
+Eseguire tutto `015_customer_profile_fields.sql` sul database esistente dopo 006.
+Aggiunge birth_date, skill_level, language e country_code; sono facoltativi e
+rimangono null sui clienti già presenti. Vincoli: nascita finita/non futura,
+livello beginner/intermediate/expert e codici di due lettere maiuscole.
+Lingua e paese conservano i codici legacy senza deduzioni sulla cittadinanza.
+La migrazione è rieseguibile e mantiene grant e RLS già definiti in 006.
+Non importa il CSV, non cambia i vincoli di nome/cognome e non aggiunge riepiloghi
+storici alla tabella customers. L'importazione sarà un passaggio separato.
+
+
+## 016 — Clienti storici e archivio dell'importazione
+
+016_legacy_customer_import.sql richiede 015 e aggiunge is_legacy, riservato agli
+inserimenti amministrativi. I nomi vuoti sono accettati solo per i clienti storici;
+le nuove registrazioni mantengono nome e cognome obbligatori. Grant sulle colonne
+escludono is_legacy dalle scritture degli operatori, con RLS invariata.
+customer_import_batches e customer_import_rows conservano origine e tutte le celle
+CSV; l'archivio è amministrativo, senza accesso anonimo o operatore.
+
+Per il file reale usare `scripts/customer_import/generate.py`: il file generato
+`private/customer-imports/import_clienti.sql` include migrazioni e inserimento
+completo, quindi basta eseguire quel file intero. Contiene dati personali ed è
+escluso da Git. Non scarta righe e non unisce omonimi, ma evita duplicazioni quando
+si riesegue la stessa importazione. Non modifica clienti già esistenti.
+
+Per gli editor che rifiutano la query completa, il generatore crea anche
+`private/customer-imports/blocchi/01_clienti.sql` e le parti successive. Eseguire
+un file per volta in ordine numerico; la prima parte prepara lo schema, l'ultima
+controlla il totale. I blocchi mantengono gli UUID del file singolo e sono ripetibili.
+Il conteggio intermedio cresce dopo ogni blocco; solo l'ultimo deve raggiungere 5.860
+per il CSV clienti_nel_periodo.csv attuale.
+
+
+## 017 — Gestione clienti
+
+Eseguire tutto `017_customer_management.sql` dopo 015 e 007. La cancellazione è
+logica (deleted_at) e conserva i riferimenti in noleggi, pagamenti e archivio CSV.
+La RPC skirenting_delete_customer verifica profilo/sedi, è idempotente e non
+concede DELETE diretto. I flag deleted_at e is_legacy restano non scrivibili dagli
+operatori via REST. La modifica dei normali campi mantiene la policy condivisa.
+Un trigger rifiuta nuove prenotazioni per clienti eliminati senza bloccare le
+operazioni sui noleggi esistenti. Script rieseguibile, nessuna importazione dati.

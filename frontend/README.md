@@ -11,53 +11,90 @@ nello ZIP. Noleggi, attrezzatura, clienti, incassi e grafici usano esclusivament
 dati dimostrativi in `src/pages/dashboard/demo-data.ts`.
 Il selettore del periodo aggiorna gli incassi e il grafico dei noleggi in locale.
 Analytics (`/analytics`) contiene un segnaposto: metriche e report sono ancora da definire.
-Storico noleggi (`/noleggi`) presenta solo prenotazioni dimostrative concluse o annullate,
-con ricerca e filtro per stato. Le prenotazioni attive e future sono escluse dallo storico.
-Non sono ancora presenti creazione, modifica o salvataggio delle prenotazioni.
-Magazzino noleggio (`/materiale-noleggio`) e Magazzino vendita (`/materiale-vendita`)
-contengono inventari dimostrativi distinti, con ricerca e filtri per categoria:
-Sci, Snowboard, Scarponi, Bastoncini, Casco, Maschere, Kit ARTVA e Ciaspole.
-Le quantità sono raggruppate per modello e misura; tariffe e prezzi sono esempi.
-Nel magazzino vendita le colonne cambiano per categoria: vista generale con tipo,
-marca, modello, quantità e prezzo; sci/snowboard con tipo e lunghezza; scarponi con
-millimetri, taglia scarpe e taglia in centimetri; bastoncini con marca e altezza;
-casco con taglia e colore; maschere, kit ARTVA e ciaspole con marca e modello.
-Ogni riga raggruppa una variante, ma gli esemplari hanno codici distinti consultabili
-nel popup. Le quantità derivano dal numero di codici presenti.
-Sci, tabella principale: marca, modello, tipo, lunghezza, quantità e prezzo.
-Snowboard, tabella principale: marca, modello, tipo, lunghezza, quantità e prezzo.
-In queste due categorie i codici univoci sono mostrati solo nel popup, insieme
-a marca, modello, tipo, lunghezza, raggio, quantità e prezzo. Il raggio è espresso
-in metri e i valori presenti sono dimostrativi.
-Il dataset vendita è in `src/pages/inventory/sale-inventory.ts`.
-Entrambi i magazzini si aprono sulla categoria Sci; il selettore mostra solo
-le otto categorie, senza la vista Tutto il materiale.
-In entrambi i magazzini, un clic sulla riga o sul pulsante Scheda apre il dettaglio
-in sovraimpressione. La scheda è consultabile e mostra i dati dimostrativi esistenti;
-i contenuti specifici delle categorie vengono definiti progressivamente.
-Vendite (`/vendite`) contiene uno storico dimostrativo con ricerca cliente (nome,
-cognome, email e cellulare), filtro per materiale e popup di dettaglio. I download
-generano PDF facsimile: ricevuta per vendita e riepilogo di tutto lo storico,
-indipendentemente dai filtri. I metodi di pagamento mostrati sono esempi da confermare.
+Storico noleggi (`/noleggi`) legge tutti i noleggi reali della sede selezionata,
+compresi quelli prenotati e attivi, con ricerca per cliente, email, telefono o numero,
+filtro per stato e periodo (sovrapposizione inclusiva), e paginazione.
+Il popup mostra cliente, albergo, note distinte, materiale con codici e prezzi salvati,
+consegne/rientri registrati, pagamenti con data/ora, sconto, totale, pagato e residuo.
+Gli stati usano badge distinti: blu prenotato, viola in preparazione, rosso
+materiale da restituire, giallo concluso con saldo pendente, verde concluso e saldato,
+grigio annullato. Il conteggio dei rientri e il residuo determinano lo stato mostrato
+anche per noleggi ancora active nel database. Il filtro e il popup usano gli stessi stati.
+Nello storico il pagamento si registra dalla riga o dal popup dei noleggi conclusi
+con saldo pendente. Riutilizza il modulo e l'endpoint dei rientri (query 014):
+aggiorna subito importi e stato nell'elenco e riapre il dettaglio aggiornato.
+Saldo parziale mantiene il giallo, saldo completo passa al verde. Modifica e
+annullamento restano da implementare. I rientri si registrano nella pagina dedicata.
+Non richiede nuove query SQL rispetto alle tabelle già predisposte.
+Magazzino noleggio (`/materiale-noleggio`) legge il materiale reale della sede attiva.
+Magazzino vendita (`/materiale-vendita`) mantiene categorie, colonne e struttura,
+ma il dataset locale in `src/pages/inventory/sale-inventory.ts` è vuoto: i dati di prova
+sono stati rimossi e il collegamento ai dati vendita resta da implementare.
+Le categorie vendita sono Sci, Snowboard, Scarponi, Bastoncini, Casco, Maschere,
+Kit ARTVA e Ciaspole. Le colonne dipendono dalla categoria e il dettaglio, quando
+saranno presenti articoli, mostra caratteristiche e codici degli esemplari.
+Entrambi i magazzini si aprono sulla categoria Sci, senza la vista Tutto il materiale.
+Vendite (`/vendite`) mantiene ricerca cliente e filtri per materiale, ma l'elenco
+è vuoto: i dati di prova sono stati rimossi. Il riepilogo PDF è disabilitato senza
+vendite. Il collegamento allo storico reale resta da implementare.
 La sidebar separa Panoramica, Anagrafica, Storico, Operatività e Magazzino. Lo storico non
-contiene comandi di creazione o modifica; restano disponibili dettagli e download.
+crea prenotazioni; permette dettagli e registrazione del saldo dei noleggi già rientrati.
 Operatività contiene `/operativita/noleggi` e `/operativita/vendite`. Nei noleggi è
 attivo il primo passaggio cliente, descritto sotto; la vendita mantiene l'anteprima
-del flusso. Creazione del noleggio, movimenti, pagamenti e invio email restano da implementare.
-Rientri (`/operativita/rientri`) mostra noleggi attivi con materiale da restituire,
-ricerca per cliente/email e codici noleggio/materiale, filtri temporali e per rientri
-parziali, e una scheda con gli esemplari rientrati o ancora in consegna.
-La data di riferimento dimostrativa è esplicita (6 novembre 2026).
-Il pulsante Registra rientro è disabilitato; nessun dato o disponibilità viene modificato.
+del flusso. La conferma del noleggio è attiva dopo la query 012; i rientri richiedono la query 013; vendite e invio email restano da implementare.
+Rientri (`/operativita/rientri`) legge i noleggi reali della sede con fine prevista
+oggi (Europe/Rome), tramite `GET /locations/{id}/rental-returns`.
+Include prenotazioni confermate, in preparazione, attive e concluse con materiale,
+escludendo giorni diversi e annullati. Tre sezioni distinguono materiale ancora da
+restituire (rosso), tutto rientrato con saldo pendente (giallo) e tutto completato
+(verde). I rientri completi restano visibili nella rispettiva sezione del giorno.
+Mostra contatori del giorno, ricerca cliente/contatti/numero/codice materiale,
+paginazione e scheda consultabile con codici, stato dei singoli articoli e note.
+Caricamento, errore con retry, giorno senza rientri e ricerca vuota sono distinti.
+«Aggiorna» rilegge i dati; cambio sede e cambio giorno italiano azzerano la vista,
+annullando le richieste precedenti. Il giorno è ricontrollato ogni minuto e al focus.
+«Registra rientro» apre un form persistente e invia `POST /locations/{id}/rental-returns`
+per ogni codice. Dopo ogni successo svuota e rifocalizza il campo per il codice
+successivo, mostrando sotto la prenotazione aggiornata: rosso se mancano articoli, giallo se tutto è
+rientrato ma resta un saldo, verde se tutto è rientrato e saldato. Totale, pagato
+e residuo sono visibili nella scheda. Il rientro non registra incassi.
+La registrazione funziona anche per riconsegne anticipate o in ritardo di noleggi
+già iniziati. Richiede `013_register_rental_return.sql` in Supabase.
+L'ID resta stabile sui ritentativi e cambia dopo ogni successo o modifica del codice.
+La ricerca si applica a tutte e tre le sezioni, ciascuna con paginazione indipendente.
+In «Da saldare», il pulsante «Registra pagamento» è disponibile sia nella riga
+sia nella scheda. Il modulo propone il residuo e permette importo parziale o totale,
+metodo, data/ora italiana e note. Al salvataggio aggiorna scheda ed elenco:
+resta giallo con residuo positivo, passa verde/completed quando è tutto saldato.
+Il pagamento è solo una registrazione di un incasso già ricevuto.
+Richiede `014_register_rental_payment.sql` dopo 013; gli invii ripetuti dallo stesso
+modulo non duplicano il pagamento. Il server ricalcola il saldo e rifiuta importi
+superiori al residuo aggiornato o materiale non ancora completamente rientrato.
 I requisiti raccolti sono conservati in [`../docs/requisiti.md`](../docs/requisiti.md).
 
 Clienti (`/clienti`, in Anagrafica) usa i dati reali restituiti da FastAPI:
-nome, cognome, email, telefono e note. La ricerca filtra nome, cognome, email e
+nome, cognome, email, telefono, data di nascita, livello, lingua, paese e note.
+I nuovi campi richiedono la query 015 e sono facoltativi. La ricerca filtra nome, cognome, email e
 telefono, ignora maiuscole e accenti e riconosce i telefoni anche senza spazi
 o trattini. Consente di combinare nome e cognome in qualsiasi ordine.
 I clienti sono condivisi tra le sedi. Non sono usati clienti dimostrativi:
 caricamento, errore con retry, elenco vuoto e ricerca senza risultati sono distinti.
-La scheda del cliente con le sue prenotazioni verrà collegata successivamente.
+Cliccando la riga o il nome del cliente si apre la scheda delle prenotazioni:
+numero complessivo e lista dalla più recente alla più vecchia, con inizio, fine,
+sede, totale e pagato. Comprende tutte le sedi autorizzate, con pagine di 20 righe.
+Il conteggio riguarda i noleggi salvati nel gestionale; il CSV anagrafico non
+contiene le singole prenotazioni storiche. Le azioni modifica/elimina non aprono
+questa scheda. Caricamento, errore con retry e assenza di prenotazioni sono distinti.
+La chiusura o il cambio sessione annullano le richieste e ignorano risposte tardive.
+Non servono nuove query SQL.
+La colonna Azioni mostra due piccoli pulsanti, modifica ed elimina. Il modulo di
+modifica compila i dati esistenti e invia soltanto i campi cambiati: eventuali
+recapiti legacy non validi e non modificati rimangono intatti. La cancellazione
+richiede conferma e nasconde il cliente, conservando i riferimenti nello storico.
+Entrambe le azioni richiedono la query 017; errori non chiudono il modulo né
+rimuovono righe. L'elenco usa pagine di 50 clienti e la ricerca considera tutti i
+clienti caricati, anche quelli fuori dalla pagina corrente. La colonna azioni
+rimane visibile durante lo scorrimento orizzontale.
 
 In `/operativita/noleggi`, scrivendo il cognome si cercano i clienti nell'anagrafica
 condivisa. Tutte le corrispondenze (anche parziali, ignorando maiuscole e accenti)
@@ -71,18 +108,22 @@ invia `POST /customers` e seleziona il cliente restituito dal backend. Il nuovo 
 sarà visibile nell'elenco Clienti. Non salva albergo o documento e non crea ancora
 una prenotazione. Il secondo passaggio è visibile fin dall'apertura della pagina, con
 data di inizio, rientro previsto e albergo facoltativo, letto da `GET /hotels` con
-l'opzione Nessun albergo. Entrambe le sezioni si aprono e chiudono cliccando il titolo, senza
-perdere i dati compilati. Il rientro non può precedere l'inizio; le due date possono coincidere.
+l'opzione Nessun albergo. Il nuovo noleggio è una scheda unica, senza pannelli richiudibili:
+sugli schermi ampi cognome, nome, cellulare ed email sono affiancati, con date
+e albergo accanto. Le note cliente e prenotazione occupano una riga dedicata.
+Materiale, riepilogo e pagamento seguono sotto. Sui portatili cliente e soggiorno
+occupano due righe orizzontali; sui telefoni i campi si impilano.
+Campi, pulsanti e tabelle usano caratteri più grandi. Il rientro non può precedere l'inizio; le due date possono coincidere.
 Date e albergo appartengono alla bozza del noleggio e non modificano il cliente;
 restano compilati anche quando si cambia persona nello stesso flusso. Gli alberghi
-usano gli ID reali di Supabase e non applicano sconti. Il salvataggio della prenotazione
-non è ancora collegato: bozza e selezione si azzerano dopo ricaricamento o cambio sede.
+usano gli ID reali di Supabase e lo sconto corrente nel riepilogo. Fino alla conferma,
+bozza e selezione si azzerano dopo ricaricamento o cambio sede.
 Il modulo mantiene i valori su errore, blocca invii simultanei e annulla le richieste
 al cambio sessione o uscita dalla pagina; una richiesta già arrivata al server può
 essere stata salvata, quindi in caso di errore di connessione verificare l'anagrafica.
 
-Il terzo passaggio «Materiale» è visibile subito e richiudibile. Legge il magazzino
-reale della sede attiva con `GET /locations/{id}/rental-inventory`, già autorizzato
+L’area «Materiale» è sempre visibile sotto cliente e soggiorno. Legge il magazzino
+reale della sede attiva con `GET /locations/{id}/rental-inventory?available_only=true`, già autorizzato
 dal backend. Il campo codice accetta testo e invio da un lettore che emula la tastiera;
 il confronto è esatto, conservando maiuscole, simboli e zeri iniziali. «Aggiungi codice»
 consente anche l'inserimento manuale. Dopo l'aggiunta il campo viene svuotato e resta
@@ -92,13 +133,21 @@ La ricerca manuale filtra categoria, codice, marca, modello, misura e gruppo, co
 pagine di 20 esemplari. Ogni esemplare può essere aggiunto una sola volta. Sono
 selezionabili soltanto articoli attivi, noleggiabili e prenotabili; manutenzione,
 dismissione e altre disabilitazioni sono mostrate senza indicare una disponibilità
-per data. Gli articoli scelti mostrano codice, categoria, marca, modello e misura,
-con un comando di rimozione. La sezione chiusa diventa verde quando contiene materiale.
+per data nella loro etichetta. Gli articoli scelti mostrano codice, categoria, marca, modello e misura,
+con un comando di rimozione.
 
-La selezione resta nella bozza modificando cliente, date o apertura delle sezioni;
-si azzera al cambio sede/sessione, uscita o ricaricamento. Non vengono creati noleggi
-né modificati gli esemplari: prenotazione effettiva, disponibilità per periodo e
-tariffe saranno collegati quando esisteranno le relative tabelle e regole.
+L'elenco esclude gli esemplari consegnati/non rientrati e le prenotazioni
+confermate o in preparazione sovrapposte alle date scelte (estremi inclusi).
+Senza periodo completo viene verificata la disponibilità di oggi in Europe/Rome.
+Le date complete passano come `starts_on` e `ends_on`; cambiarle ricarica l'elenco
+e rimuove dalla selezione gli esemplari non più disponibili, con un avviso.
+La disponibilità si aggiorna al cambio delle date. Il codice manuale può
+aggiungere solo esemplari restituiti dalla stessa ricerca di disponibilità.
+Il magazzino generale continua a mostrare tutti gli esemplari.
+La selezione resta nella bozza modificando cliente;
+si azzera al cambio sede/sessione, uscita o ricaricamento. La sola selezione non
+crea prenotazioni né modifica gli esemplari. La conferma controlla la disponibilità
+e salva il noleggio; le tariffe vengono calcolate nel riepilogo.
 
 Gestione (`/management`, in fondo alla sidebar sotto Amministrazione) contiene la card Alberghi, che apre
 `/management/hotels`. La pagina permette di aggiungere un albergo per nome e
@@ -110,8 +159,8 @@ Eseguire poi `009_hotels_discount.sql` per la colonna `discount`. Nel modulo di
 creazione si indica lo sconto percentuale (default 0); nell'elenco ogni albergo
 ha un campo Sconto (%) e un pulsante Salva. La percentuale può avere due decimali
 e deve essere tra 0 e 100. I valori rimangono nel campo in caso di errore.
-Lo sconto viene salvato nella convenzione, ma non viene ancora applicato al
-totale del noleggio: prezzi e conferma della prenotazione restano da collegare.
+Lo sconto viene salvato nella convenzione e applicato al riepilogo del nuovo
+noleggio e copiato alla conferma nella prenotazione.
 
 La card Tariffe in Gestione apre `/management/tariffe`: il listino è diviso per
 tipo di materiale, con i relativi gruppi su righe e sette colonne €/giorno (1, 2,
@@ -120,7 +169,18 @@ per ogni gruppo; un gruppo nuovo riceve automaticamente una riga da configurare.
 Un campo vuoto viene salvato come null, distinto da zero. Ogni gruppo viene salvato
 con il proprio pulsante; i valori ancora non salvati restano compilati passando
 da un tipo all'altro, ma non dopo ricaricamento o uscita dalla pagina. Tutte le
-sedi usano lo stesso listino. Il calcolo del nuovo noleggio sarà collegato in seguito.
+sedi usano lo stesso listino. Il riepilogo del nuovo noleggio legge queste tariffe.
+
+Il riepilogo è sempre visibile sotto il materiale. Dopo aver scelto
+cliente, periodo valido e materiale, chiede al backend i prezzi e mostra cliente,
+date, durata, albergo, tariffa giornaliera e totale per esemplare, subtotale,
+sconto dell'albergo e totale finale. I giorni sono inclusivi; da 7 giorni in poi
+si usa la fascia 7+ per tutti i giorni. Una tariffa mancante resta distinta da
+zero e impedisce di mostrare un totale completo. Le righe già note restano visibili.
+Date, albergo e materiale modificati invalidano il riepilogo precedente; richieste
+superate vengono annullate. «Aggiorna prezzi» rilegge listino e sconto correnti.
+L'endpoint è di sola
+lettura: non salva prenotazioni, non registra pagamenti e non riserva gli articoli.
 
 Nel magazzino noleggio, la scheda di una variante mostra «Sposta sede» accanto a
 ogni codice. Il modulo trasferisce un singolo esemplare verso un'altra sede
@@ -148,7 +208,7 @@ src/
 ├── pages/inventory/       # Inventari noleggio e vendita, categorie condivise
 ├── pages/sales/           # Storico vendite, dettagli e PDF dimostrativi
 ├── pages/operations/      # Pagine predisposte per i futuri flussi operativi
-├── pages/returns/         # Elenco e schede rientri dimostrativi
+├── pages/returns/         # Rientri di oggi e registrazione per codice
 └── styles/global.css      # Stili e variabili visive
 ```
 
@@ -168,3 +228,35 @@ Frontend / login: http://127.0.0.1:5174/login
 Solo login, profilo e sedi sono collegati: tutte le altre pagine usano dati dimostrativi.
 Per distribuire la SPA, configurare l'hosting per servire `index.html` anche su
 `/dashboard` e sulle altre future rotte del frontend.
+
+
+L’area «Pagamento», dopo il riepilogo, permette di scegliere Paga dopo, Acconto o Saldo
+completo. Le opzioni si attivano solo con un riepilogo valido. Acconto e saldo
+richiedono metodo (Contanti, Carta, Bonifico o Altro), data/ora italiana modificabile
+e note facoltative. L'acconto deve essere positivo e inferiore al totale. Il saldo
+segue automaticamente il totale ricalcolato; un acconto diventato eccessivo viene
+segnalato senza alterare l'importo digitato. I calcoli usano centesimi interi.
+Un totale zero non prepara alcuna riga pagamento. La scelta rimane bozza fino alla conferma.
+
+«Conferma noleggio» richiede cliente, periodo, materiale, prezzi e pagamento validi.
+Invia una sola richiesta a `POST /locations/{id}/rental-bookings`, con un ID stabile
+per tutta la bozza. Durante il salvataggio i campi sono disabilitati e gli invii
+ripetuti sono bloccati. Al successo mostra il numero del noleggio, totale, importo
+registrato e residuo ricevuti dal backend. «Nuovo noleggio» apre una nuova bozza.
+In caso di errore conserva i dati: riprovare dallo stesso modulo riusa l'ID e non
+duplica una conferma già riuscita. La funzione richiede `012_confirm_rental_booking.sql`.
+Non vengono collegati cassa o vendite. I rientri usano il flusso separato con query 013.
+
+In Periodo e albergo è presente «Note prenotazione», facoltativo (massimo 5.000
+caratteri), separato dalle note anagrafiche e di pagamento. Compare nel riepilogo
+e nella schermata di conferma ed è salvato in `rental_bookings.notes`.
+Non influisce sui prezzi e resta compilato durante la compilazione della scheda. Se 012 è già
+stata applicata, rieseguire la versione aggiornata per aggiornare la funzione.
+
+
+I campi anagrafici aggiuntivi (query 015) sono mostrati nella tabella Clienti e
+nel dettaglio noleggio. Quando si registra un cliente dal nuovo noleggio, una riga
+aggiuntiva permette nascita, livello e codici lingua/paese facoltativi. Un cliente
+esistente con questi dati li mostra già compilati in sola lettura; non vengono
+sovrascritti selezionandolo per una prenotazione. L'importazione dei vecchi clienti
+non è ancora stata effettuata.

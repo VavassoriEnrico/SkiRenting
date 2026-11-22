@@ -23,7 +23,6 @@ export function SaleInventoryPage() {
     <div className="dashboard-page inventory-page">
       <div className="dashboard-heading">
         <div><div className="page-heading"><span className="heading-icon"><ShoppingBag size={21} aria-hidden="true" /></span><h1>Magazzino vendita</h1></div><p className="page-description">Gli articoli destinati alla vendita, divisi per categoria.</p></div>
-        <span className="demo-badge"><span aria-hidden="true" />Dati dimostrativi</span>
       </div>
       <section className="stats-section tone-indigo rentals-summary" aria-label="Riepilogo magazzino vendita">
         <div className="stats-grid">
@@ -44,8 +43,8 @@ export function SaleInventoryPage() {
           <div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="inventory-search">Cerca codice, tipo, marca, modello, misura o colore</label><input id="inventory-search" type="search" placeholder="Cerca codice, tipo, marca, modello, misura o colore…" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
           {(query || category !== 'ski') && <button className="reset-filters" type="button" onClick={resetFilters}><X size={14} aria-hidden="true" />Azzera filtri</button>}
         </div>
-        <SaleInventoryTable items={filteredItems} category={category} onReset={resetFilters} onSelect={setSelectedItem} />
-        <p className="rentals-panel-footer">Quantità raggruppate per modello e caratteristiche; ogni esemplare ha il proprio codice. Apri la scheda del materiale per consultarne i dettagli e i codici univoci. Prezzi unitari e dati dimostrativi.</p>
+        <SaleInventoryTable items={filteredItems} category={category} onReset={resetFilters} onSelect={setSelectedItem} isWarehouseEmpty={saleInventory.length === 0} />
+        <p className="rentals-panel-footer">Quantità raggruppate per modello e caratteristiche; ogni esemplare ha il proprio codice. Apri la scheda del materiale per consultarne i dettagli e i codici univoci. Prezzi unitari.</p>
       </section>
       {selectedItem && <InventoryDetailsDialog key={selectedItem.id} onClose={() => setSelectedItem(null)} details={{
         title: `${selectedItem.brand} ${selectedItem.model}`,

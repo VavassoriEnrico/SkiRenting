@@ -11,9 +11,11 @@ export type RentalPeriod = {
   hotel: string;
 };
 
-export function RentalPeriodFields({ value, onChange }: {
+export function RentalPeriodFields({ value, onChange, notes = '', onNotesChange }: {
   value: RentalPeriod;
   onChange: (value: RentalPeriod) => void;
+  notes?: string;
+  onNotesChange?: (notes: string) => void;
 }) {
   const { session } = useAuth();
   const token = session?.access_token;
@@ -32,15 +34,16 @@ export function RentalPeriodFields({ value, onChange }: {
   const invalidPeriod = !!(value.starts_on && value.ends_on && value.ends_on < value.starts_on);
 
   return (
-    <RentalSection id="rental-period" step={2} title="Periodo e albergo" className="rental-period-panel" complete={!!value.starts_on && !!value.ends_on && !invalidPeriod}>
+    <RentalSection id="rental-period" title="Periodo e albergo" className="rental-period-panel">
       <div className="rental-customer-body">
-        <div className="rental-form-grid">
+        <div className="rental-form-grid rental-period-fields">
           <label>Data di inizio *<input type="date" required value={value.starts_on} onChange={(event) => onChange({ ...value, starts_on: event.target.value })} /></label>
           <label>Rientro previsto *<input type="date" required min={value.starts_on || undefined} value={value.ends_on} aria-invalid={invalidPeriod || undefined} aria-describedby={invalidPeriod ? 'rental-period-error' : undefined} onChange={(event) => onChange({ ...value, ends_on: event.target.value })} /></label>
-          <label className="rental-form-wide">Albergo<select value={value.hotel} disabled={!hotels} onChange={(event) => onChange({ ...value, hotel: event.target.value })}>
+          <label className="rental-hotel-field">Albergo<select value={value.hotel} disabled={!hotels} onChange={(event) => onChange({ ...value, hotel: event.target.value })}>
             <option value="">Nessun albergo</option>
             {hotels?.map((hotel) => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}
           </select></label>
+          {onNotesChange && <label className="rental-form-wide">Note prenotazione<textarea maxLength={5000} value={notes} onChange={(event) => onNotesChange(event.target.value)} placeholder="Annotazioni per questo noleggio (facoltative)" /></label>}
         </div>
         {hotelError && <div className="auth-error" role="alert">{hotelError}<div><button className="sales-button" type="button" onClick={() => setAttempt((current) => current + 1)}>Riprova alberghi</button></div></div>}
         {!hotels && !hotelError && <p className="rental-form-hint" role="status">Caricamento alberghi…</p>}

@@ -41,8 +41,8 @@ export const saleDetailColumns = {
   snowboard: [brand, model, type, length, radius],
 };
 
-export function SaleInventoryTable({ items, category, onReset, onSelect }: {
-  items: SaleInventoryItem[]; category: Category | 'all'; onReset: () => void; onSelect: (item: SaleInventoryItem) => void;
+export function SaleInventoryTable({ items, category, onReset, onSelect, isWarehouseEmpty = false }: {
+  isWarehouseEmpty?: boolean; items: SaleInventoryItem[]; category: Category | 'all'; onReset: () => void; onSelect: (item: SaleInventoryItem) => void;
 }) {
   const columns = saleCategoryColumns[category];
   return (
@@ -63,7 +63,7 @@ export function SaleInventoryTable({ items, category, onReset, onSelect }: {
               <td><button type="button" className="icon-button" title="Apri scheda materiale" aria-label={`Apri scheda ${item.brand} ${item.model}`} aria-haspopup="dialog" onClick={() => onSelect(item)}><Eye size={17} aria-hidden="true" /></button></td>
             </tr>
           ))}
-          {!items.length && <tr><td colSpan={columns.length + 3}><div className="rentals-empty"><h3>Nessun articolo trovato</h3><p>Prova un altro termine o seleziona una categoria diversa.</p><button type="button" onClick={onReset}>Azzera filtri</button></div></td></tr>}
+          {!items.length && <tr><td colSpan={columns.length + 3}><div className="rentals-empty"><h3>{isWarehouseEmpty ? 'Nessun articolo nel magazzino vendita' : 'Nessun articolo trovato'}</h3>{!isWarehouseEmpty && <><p>Prova un altro termine o seleziona una categoria diversa.</p><button type="button" onClick={onReset}>Azzera filtri</button></>}</div></td></tr>}
         </tbody>
       </table>
     </div>

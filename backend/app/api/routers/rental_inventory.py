@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -16,8 +17,11 @@ router = APIRouter(prefix="/locations", tags=["rental-inventory"])
 
 
 @router.get("/{location_id}/rental-inventory", response_model=RentalInventoryRead)
-def read_inventory(location_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
-    return rental_inventory_service.get_inventory(client, user_id, location_id)
+def read_inventory(
+    location_id: UUID, user_id: CurrentUserId, client: SupabaseClient,
+    available_only: bool = False, starts_on: date | None = None, ends_on: date | None = None,
+):
+    return rental_inventory_service.get_inventory(client, user_id, location_id, available_only, starts_on, ends_on)
 
 
 @router.get('/{location_id}/rental-catalog', response_model=RentalCatalogRead)

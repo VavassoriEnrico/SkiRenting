@@ -15,7 +15,9 @@ function unavailableReason(item: RentalItem) {
   return item.is_rentable ? 'Non prenotabile' : 'Non noleggiabile';
 }
 
-export function RentalEquipmentSection({ token, locationId, locationName, selected, onAdd, onRemove }: {
+export function RentalEquipmentSection({ token, locationId, locationName, selected, onAdd, onRemove, startsOn = '', endsOn = '' }: {
+  startsOn?: string;
+  endsOn?: string;
   token: string;
   locationId?: string;
   locationName?: string;
@@ -34,18 +36,33 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
+  const currentSelection = useRef({ selected, onRemove });
+  currentSelection.current = { selected, onRemove };
+  const periodQuery = startsOn && endsOn && endsOn >= startsOn
+    ? `&starts_on=${startsOn}&ends_on=${endsOn}` : '';
+  const inventoryPath = `/locations/${locationId}/rental-inventory?available_only=true${periodQuery}`;
 
   useEffect(() => {
     if (!locationId) return;
     const controller = new AbortController();
     setInventory(null); setLoadError('');
-    apiGet<RentalInventory>(`/locations/${locationId}/rental-inventory`, token, controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setInventory(result); })
+    apiGet<RentalInventory>(inventoryPath, token, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setInventory(result);
+        const availableIds = new Set(result.items.map((item) => item.id));
+        const unavailable = currentSelection.current.selected.filter((item) => !availableIds.has(item.id));
+        unavailable.forEach((item) => currentSelection.current.onRemove(item.id));
+        if (unavailable.length) {
+          setMessage('');
+          setError(`Materiale non più disponibile, rimosso dalla selezione: ${unavailable.map((item) => item.code).join(', ')}.`);
+        }
+      })
       .catch((cause) => {
         if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : 'Impossibile caricare il materiale.');
       });
     return () => controller.abort();
-  }, [token, locationId, attempt]);
+  }, [token, locationId, inventoryPath, attempt]);
 
   const selectedIds = new Set(selected.map((item) => item.id));
   const terms = query.trim().toLocaleLowerCase('it-IT').split(/\s+/);
@@ -75,13 +92,13 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
     const item = inventory.items.find((entry) => entry.code === code.trim());
     if (item) add(item);
     else {
-      setMessage(''); setError(`Codice non trovato nel magazzino di ${locationName}.`);
+      setMessage(''); setError(`Codice non trovato o non disponibile per il noleggio nel magazzino di ${locationName}.`);
       codeInput.current?.focus();
     }
   }
 
   return (
-    <RentalSection id="rental-equipment" step={3} title="Materiale" className="rental-equipment-panel" complete={selected.length > 0}>
+    <RentalSection id="rental-equipment" title="Materiale" className="rental-equipment-panel">
       <div className="rental-customer-body">
         <p className="rental-equipment-description">Materiale del magazzino di {locationName || 'questa sede'}. Leggi un codice oppure cerca manualmente un articolo.</p>
         {!locationId ? <p role="status">Seleziona una sede per cercare il materiale.</p>
@@ -123,7 +140,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
               <tbody>{selected.map((item) => <tr key={item.id}><th scope="row" className="unit-code">{item.code}</th><td>{item.variant.category.name}</td><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td><button className="icon-button" type="button" aria-label={`Rimuovi ${item.code}`} onClick={() => { onRemove(item.id); setError(''); setMessage(`Articolo ${item.code} rimosso.`); }}><Trash2 size={17} aria-hidden="true" /></button></td></tr>)}</tbody>
             </table>
           </div>}
-        <p className="rental-form-hint rental-equipment-availability">La selezione non riserva ancora gli articoli. Disponibilità per il periodo e tariffe saranno collegate alle prenotazioni.</p>
+        <p className="rental-form-hint rental-equipment-availability">Gli articoli già consegnati o prenotati nel periodo scelto sono esclusi. Senza un periodo completo viene verificata la disponibilità di oggi. La disponibilità viene ricontrollata alla conferma.</p>
       </div>
     </RentalSection>
   );

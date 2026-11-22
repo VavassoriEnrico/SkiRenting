@@ -1,4 +1,6 @@
+from datetime import date, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
@@ -8,12 +10,22 @@ from app.schemas.rental_inventory import RentalInventoryRead, RentalItemCreate
 from app.services.operator_service import get_authorized_location
 
 
-def get_inventory(client: httpx.Client, user_id: UUID, location_id: UUID) -> RentalInventoryRead:
+def get_inventory(
+    client: httpx.Client, user_id: UUID, location_id: UUID, available_only: bool = False,
+    starts_on: date | None = None, ends_on: date | None = None,
+) -> RentalInventoryRead:
     get_authorized_location(client, user_id, location_id)
+    if (starts_on is None) != (ends_on is None) or (starts_on and ends_on < starts_on):
+        raise HTTPException(422, 'Indica entrambe le date con rientro non precedente all’inizio.')
     try:
+        items = rental_inventory_repository.list_items(client, location_id)
+        if available_only:
+            today = datetime.now(ZoneInfo('Europe/Rome')).date()
+            blocked = rental_inventory_repository.unavailable_item_ids(client, items, starts_on or today, ends_on or today)
+            items = [item for item in items if item['id'] not in blocked]
         return RentalInventoryRead(
             categories=rental_inventory_repository.list_categories(client),
-            items=rental_inventory_repository.list_items(client, location_id),
+            items=items,
         )
     except httpx.HTTPError as error:
         raise HTTPException(

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { StatCard } from '../../components/ui/StatCard';
 import { categories } from '../inventory/demo-data';
 import type { Category } from '../inventory/demo-data';
-import { demoSales } from './demo-data';
+import { sales } from './demo-data';
 import type { Sale } from './demo-data';
 import { SaleDetailsDialog } from './SaleDetailsDialog';
 import { downloadReceipt, downloadSalesSummary } from './sales-downloads';
@@ -14,8 +14,8 @@ export function SalesPage() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | 'all'>('all');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const visibleSales = filterSales(demoSales, query, category);
-  const totalCents = demoSales.reduce((total, sale) => total + sale.priceCents, 0);
+  const visibleSales = filterSales(sales, query, category);
+  const totalCents = sales.reduce((total, sale) => total + sale.priceCents, 0);
 
   function resetFilters() {
     setQuery('');
@@ -29,23 +29,22 @@ export function SalesPage() {
           <div className="page-heading"><span className="heading-icon"><ShoppingBag size={21} aria-hidden="true" /></span><h1>Storico vendite</h1></div>
           <p className="page-description">Lo storico delle vendite, i clienti e le ricevute.</p>
         </div>
-        <span className="demo-badge"><span aria-hidden="true" />Dati dimostrativi</span>
       </div>
 
       <div className="sales-page-actions">
-        <button type="button" className="sales-button" onClick={() => downloadSalesSummary(demoSales)}><Download size={16} aria-hidden="true" />Scarica riepilogo completo</button>
+        <button type="button" className="sales-button" disabled={sales.length === 0} onClick={() => downloadSalesSummary(sales)}><Download size={16} aria-hidden="true" />Scarica riepilogo completo</button>
       </div>
 
-      <section className="stats-section tone-indigo rentals-summary" aria-label="Riepilogo di tutte le vendite dimostrative">
+      <section className="stats-section tone-indigo rentals-summary" aria-label="Riepilogo di tutte le vendite">
         <div className="stats-grid">
-          <StatCard label="Vendite totali" value={String(demoSales.length)} detail="Tutto lo storico dimostrativo" icon={ReceiptText} />
+          <StatCard label="Vendite totali" value={String(sales.length)} detail="Tutto lo storico" icon={ReceiptText} />
           <StatCard label="Totale vendite" value={formatPrice(totalCents)} detail="Importo complessivo, senza filtri" icon={Banknote} />
-          <StatCard label="Acquirenti" value={String(new Set(demoSales.map((sale) => sale.customer.id)).size)} detail="Clienti distinti nello storico" icon={Users} />
+          <StatCard label="Acquirenti" value={String(new Set(sales.map((sale) => sale.customer.id)).size)} detail="Clienti distinti nello storico" icon={Users} />
         </div>
       </section>
 
       <section className="rentals-panel" aria-labelledby="sales-list-title">
-        <div className="rentals-panel-heading"><h2 id="sales-list-title">Storico vendite</h2><span className="rentals-count" role="status">{visibleSales.length} di {demoSales.length}</span></div>
+        <div className="rentals-panel-heading"><h2 id="sales-list-title">Storico vendite</h2><span className="rentals-count" role="status">{visibleSales.length} di {sales.length}</span></div>
         <div className="rentals-filters">
           <div className="rental-search">
             <Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="sales-search">Cerca nome, cognome, email, cellulare o codice</label>
@@ -61,7 +60,7 @@ export function SalesPage() {
 
         <div className="rentals-table-scroll" role="region" aria-label="Storico vendite, scorrimento orizzontale" tabIndex={0}>
           <table className="rentals-table sales-table">
-            <caption className="sr-only">Vendite passate dimostrative, ordinate dalla più recente</caption>
+            <caption className="sr-only">Vendite passate, ordinate dalla più recente</caption>
             <thead><tr><th scope="col">Vendita / oggetto</th><th scope="col">Materiale / marca</th><th scope="col">Acquirente</th><th scope="col">Data</th><th scope="col">Pagamento</th><th scope="col" className="rental-amount">Prezzo</th><th scope="col">Azioni</th></tr></thead>
             <tbody>
               {visibleSales.map((sale) => (
@@ -75,11 +74,11 @@ export function SalesPage() {
                   <td><div className="sales-row-actions"><button type="button" className="icon-button" title="Apri dettaglio" aria-label={`Apri dettaglio vendita ${sale.id}`} onClick={() => setSelectedSale(sale)}><Eye size={17} aria-hidden="true" /></button><button type="button" className="icon-button" title="Scarica ricevuta PDF" aria-label={`Scarica ricevuta PDF vendita ${sale.id}`} onClick={() => downloadReceipt(sale)}><Download size={17} aria-hidden="true" /></button></div></td>
                 </tr>
               ))}
-              {!visibleSales.length && <tr><td colSpan={7}><div className="rentals-empty"><Search size={25} aria-hidden="true" /><h3>Nessuna vendita trovata</h3><p>Modifica la ricerca o il tipo di materiale.</p><button type="button" onClick={resetFilters}>Azzera filtri</button></div></td></tr>}
+              {!visibleSales.length && <tr><td colSpan={7}><div className="rentals-empty"><Search size={25} aria-hidden="true" /><h3>{sales.length ? 'Nessuna vendita trovata' : 'Nessuna vendita da mostrare'}</h3>{sales.length > 0 ? <><p>Modifica la ricerca o il tipo di materiale.</p><button type="button" onClick={resetFilters}>Azzera filtri</button></> : <p>Lo storico verrà collegato alle vendite reali.</p>}</div></td></tr>}
             </tbody>
           </table>
         </div>
-        <p className="rentals-panel-footer">Il riepilogo completo include tutte le vendite, indipendentemente dai filtri. Pagamenti e documenti sono dimostrativi.</p>
+        <p className="rentals-panel-footer">Il riepilogo completo include tutte le vendite, indipendentemente dai filtri.</p>
       </section>
 
       {selectedSale && <SaleDetailsDialog key={selectedSale.id} sale={selectedSale} onClose={() => setSelectedSale(null)} />}

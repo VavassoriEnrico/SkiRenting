@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 import httpx
@@ -73,3 +74,21 @@ def transfer_item(client: httpx.Client, item_id: UUID, source: UUID, destination
     })
     response.raise_for_status()
     return response.json()
+
+
+def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: date, ends_on: date) -> set[str]:
+    blocked = set()
+    for start in range(0, len(items), 100):
+        identifiers = ','.join(str(item['id']) for item in items[start:start + 100])
+        rows = read_all(client, 'rental_booking_items', {
+            'select': 'id,rental_inventory_id,delivered_at,booking:rental_bookings!inner(status,starts_on,ends_on)',
+            'rental_inventory_id': f'in.({identifiers})', 'returned_at': 'is.null', 'order': 'id',
+        })
+        for row in rows:
+            booking = row['booking']
+            overlaps = booking['starts_on'] <= ends_on.isoformat() and booking['ends_on'] >= starts_on.isoformat()
+            if row['delivered_at'] or booking['status'] == 'active' or (
+                booking['status'] in ('confirmed', 'preparing') and overlaps
+            ):
+                blocked.add(row['rental_inventory_id'])
+    return blocked

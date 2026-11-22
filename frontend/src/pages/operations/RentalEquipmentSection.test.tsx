@@ -47,7 +47,7 @@ function scan(code: string) {
 describe('Materiale del noleggio', () => {
   it('adds a scanned exact code, rejects duplicates, removes and allows adding it again', async () => {
     await open();
-    expect(mocks.get).toHaveBeenCalledWith('/locations/site-a/rental-inventory', 'token', expect.any(AbortSignal));
+    expect(mocks.get).toHaveBeenCalledWith('/locations/site-a/rental-inventory?available_only=true', 'token', expect.any(AbortSignal));
     scan(' +001 ');
     expect(screen.getByText('Articoli selezionati (1)')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Rimuovi +001' })).toBeTruthy();
@@ -65,7 +65,7 @@ describe('Materiale del noleggio', () => {
 
   it('distinguishes missing codes from articles in maintenance', async () => {
     await open(); scan('NOT-IN-THIS-SITE');
-    expect(screen.getByRole('alert').textContent).toContain('Codice non trovato nel magazzino di Madesimo');
+    expect(screen.getByRole('alert').textContent).toContain('Codice non trovato o non disponibile per il noleggio nel magazzino di Madesimo');
     scan('0002');
     expect(screen.getByRole('alert').textContent).toContain('manutenzione');
     expect(screen.getByText('Articoli selezionati (0)')).toBeTruthy();
@@ -106,15 +106,27 @@ describe('Materiale del noleggio', () => {
     expect(screen.getByRole('button', { name: 'Rimuovi CODE-20' })).toBeTruthy();
   });
 
-  it('retains items after changing dates and closing the section, with green outline when closed', async () => {
+  it('retains selected items when rental dates change', async () => {
     await open(); scan('+001');
     fireEvent.change(screen.getByLabelText('Data di inizio *'), { target: { value: '2026-12-01' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Materiale' }));
     const region = screen.getByRole('region', { name: 'Materiale' });
-    expect(region.classList.contains('is-complete')).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Materiale' }));
     expect(within(region).getByRole('button', { name: 'Rimuovi +001' })).toBeTruthy();
-    expect(region.classList.contains('is-complete')).toBe(false);
+  });
+
+  it('reloads availability for the chosen dates and removes unavailable selections', async () => {
+    await open(); scan('+001');
+    mocks.get.mockImplementation((path: string) => Promise.resolve(path.includes('starts_on=2026-12-01')
+      ? { ...inventory, items: [inventory.items[2]] } : inventory));
+    fireEvent.change(screen.getByLabelText('Data di inizio *'), { target: { value: '2026-12-01' } });
+    fireEvent.change(screen.getByLabelText('Rientro previsto *'), { target: { value: '2026-12-03' } });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Rimuovi +001' })).toBeNull());
+    expect(mocks.get).toHaveBeenCalledWith('/locations/site-a/rental-inventory?available_only=true&starts_on=2026-12-01&ends_on=2026-12-03', 'token', expect.any(AbortSignal));
+    expect(screen.getByRole('alert').textContent).toContain('non più disponibile');
+    fireEvent.click(screen.getByRole('button', { name: 'Ricerca manuale' }));
+    expect(screen.queryByRole('button', { name: 'Aggiungi +001' })).toBeNull();
+    scan('+001');
+    expect(screen.getByRole('alert').textContent).toContain('non disponibile');
+    expect(screen.getByText('Articoli selezionati (0)')).toBeTruthy();
   });
 
   it('reports load errors and retries without claiming the inventory is empty', async () => {

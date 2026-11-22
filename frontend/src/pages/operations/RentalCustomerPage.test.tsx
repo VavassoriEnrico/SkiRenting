@@ -78,10 +78,20 @@ describe('Cliente del nuovo noleggio', () => {
     await screen.findByText('Cliente registrato e selezionato');
     expect(mocks.post).toHaveBeenCalledWith('/customers', 'token', {
       first_name: 'Paolo', last_name: 'Rossi', email: null, phone: '+39 0001', notes: 'Nota',
+      birth_date: null, skill_level: null, language: null, country_code: null,
     }, expect.any(AbortSignal));
     fireEvent.click(screen.getByRole('button', { name: 'Cambia cliente' }));
     expect(screen.getByRole('button', { name: /Rossi Paolo/ })).toBeTruthy();
     expect(mocks.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves the optional profile fields on the new rental customer', async () => {
+    await newCustomer();
+    change('Data di nascita', '1990-04-15'); change('Livello', 'intermediate');
+    change('Lingua (codice)', 'it'); change('Paese (codice)', 'ch');
+    fireEvent.click(screen.getByRole('button', { name: 'Salva nuovo cliente' }));
+    await screen.findByText('Cliente registrato e selezionato');
+    expect(mocks.post.mock.calls[0][2]).toMatchObject({ birth_date: '1990-04-15', skill_level: 'intermediate', language: 'IT', country_code: 'CH' });
   });
 
   it('blocks double submissions and retains entered values if saving fails', async () => {
