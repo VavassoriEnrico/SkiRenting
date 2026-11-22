@@ -401,3 +401,35 @@ concede DELETE diretto. I flag deleted_at e is_legacy restano non scrivibili dag
 operatori via REST. La modifica dei normali campi mantiene la policy condivisa.
 Un trigger rifiuta nuove prenotazioni per clienti eliminati senza bloccare le
 operazioni sui noleggi esistenti. Script rieseguibile, nessuna importazione dati.
+
+
+## 018 — Storico manutenzioni
+
+Eseguire tutto `018_material_repairs.sql` dopo 002. La tabella material_repairs
+collega interventi ai singoli esemplari con tipo, stato, invio, completamento,
+note, operatore e timestamp di registrazione/aggiornamento. Tipi: edges (lamine),
+wax (sciolina), edges_and_wax (entrambi), other. Stati: in_progress, completed, cancelled.
+È obbligatoria la data di completamento solo per completed, non precedente all'invio.
+Un indice impedisce due lavorazioni aperte sullo stesso esemplare. Le righe storiche
+restano separate: i contatori di utilizzi/interventi verranno calcolati dagli storici.
+La lettura è limitata agli operatori della sede attuale dell'esemplare. Le scritture
+restano amministrative finché non vengono implementate le funzioni transazionali.
+Questa migrazione non modifica disponibilità, stato del magazzino o prenotazioni:
+il blocco durante la manutenzione richiede il collegamento operativo successivo.
+
+
+## 019 — Pagina Riparazioni e consenso al riutilizzo
+
+Eseguire tutto `019_material_repairs_workflow.sql` dopo 018 e 007.
+La creazione di una riparazione per codice è riservata a sci/snowboard della sede
+abilitati e non impegnati in un noleggio in corso. Registra l'intervento e imposta
+l'esemplare in maintenance. L'ID della richiesta evita duplicazioni sui ritentativi.
+La conferma esplicita nel nuovo noleggio completa l'esatto intervento indicato,
+registra completed_by e completed_at e riattiva il materiale. Un vecchio consenso
+non può chiudere un nuovo intervento sullo stesso esemplare. Sono mantenuti i
+controlli su sede, operatore, abilitazioni e materiale ancora consegnato.
+Un trigger impedisce nuovi abbinamenti a prenotazioni con lavori aperti, anche se
+si prova a chiamare direttamente la conferma senza passare dalla finestra UI.
+I lock sugli esemplari coordinano creazione, completamento e conferma noleggio.
+L'intervento viene chiuso al consenso prima dell'aggiunta alla bozza: resta concluso
+anche se successivamente si rimuove l'articolo o si abbandona la bozza.

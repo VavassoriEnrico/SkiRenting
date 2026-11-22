@@ -53,7 +53,9 @@ def confirmation_database():
                              '009_hotels_discount.sql', '010_rental_rates.sql',
                              '011_rental_inventory_transfers.sql', '012_confirm_rental_booking.sql',
                              '013_register_rental_return.sql', '014_register_rental_payment.sql', '015_customer_profile_fields.sql', '016_legacy_customer_import.sql',
-                             '017_customer_management.sql', '017_customer_management.sql']:
+                             '017_customer_management.sql', '017_customer_management.sql',
+                             '018_material_repairs.sql', '018_material_repairs.sql',
+                             '019_material_repairs_workflow.sql', '019_material_repairs_workflow.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -425,3 +427,147 @@ def test_customer_delete_requires_operator_access_and_flags_are_protected(setup)
     with pytest.raises(psycopg.errors.NoDataFound), conn.transaction():
         conn.execute('select skirenting_delete_customer(%s)', (str(uuid4()),))
     assert conn.execute('select deleted_at from customers where id=%s', (USER_A,)).fetchone()[0] is None
+
+
+def test_material_repairs_constraints_and_completed_history(setup):
+    conn, ids, _, _ = setup
+    conn.execute('reset role')
+    repair = conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'edges_and_wax',%s) returning id", (ids[0],USER_A)).fetchone()[0]
+    with pytest.raises(psycopg.errors.UniqueViolation), conn.transaction():
+        conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'wax',%s)", (ids[0],USER_A))
+    with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
+        conn.execute("update material_repairs set status='completed' where id=%s", (repair,))
+    with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
+        conn.execute("update material_repairs set status='completed',completed_at=sent_at-interval '1 minute' where id=%s", (repair,))
+    conn.execute("update material_repairs set status='completed',completed_at=sent_at where id=%s", (repair,))
+    second = conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'wax',%s) returning id", (ids[0],USER_A)).fetchone()[0]
+    conn.execute("update material_repairs set status='cancelled' where id=%s", (second,))
+    conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'edges',%s)", (ids[0],USER_A))
+    assert conn.execute('select count(*) from material_repairs where rental_inventory_id=%s', (ids[0],)).fetchone()[0] == 3
+    conn.execute('set local role authenticated')
+
+
+def test_material_repairs_visibility_and_operator_writes(setup):
+    conn, ids, _, _ = setup
+    conn.execute('reset role')
+    conn.execute('update rental_inventory set location_id=%s where id=%s', (SITE_B,ids[1]))
+    for inventory_id in ids:
+        conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'wax',%s)", (inventory_id,USER_A))
+    conn.execute('set local role authenticated')
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    assert [str(row[0]) for row in conn.execute('select rental_inventory_id from material_repairs').fetchall()] == [ids[0]]
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        conn.execute("insert into material_repairs(rental_inventory_id,repair_type) values(%s,'edges')", (ids[0],))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        conn.execute("update material_repairs set status='cancelled'")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        conn.execute('set local role anon')
+        conn.execute('select * from material_repairs')
+
+
+def send_for_repair(conn, code='+001', repair_id=None, site=SITE_A):
+    return conn.execute('select skirenting_create_material_repair(%s,%s,%s,%s,%s)',
+        (site,repair_id or str(uuid4()),code,'edges_and_wax','Lavoro')).fetchone()[0]
+
+
+def finish_repair(conn, repair_id, item_id, site=SITE_A):
+    return conn.execute('select skirenting_complete_material_repair(%s,%s,%s)',(site,repair_id,item_id)).fetchone()[0]
+
+
+def test_repair_closes_on_acknowledgement_and_allows_new_rental(setup):
+    conn,ids,_,_=setup
+    request_id=str(uuid4())
+    first=send_for_repair(conn,repair_id=request_id)
+    assert send_for_repair(conn,repair_id=request_id)==first
+    assert conn.execute('select status from rental_inventory where id=%s',(ids[0],)).fetchone()[0]=='maintenance'
+    assert conn.execute('select count(*) from material_repairs').fetchone()[0]==1
+    with pytest.raises(psycopg.errors.RaiseException),conn.transaction():
+        confirm(conn,payload(ids))
+    finish_repair(conn,request_id,ids[0])
+    completed=conn.execute('select status,completed_at,completed_by from material_repairs where id=%s',(request_id,)).fetchone()
+    assert completed[0]=='completed' and completed[1] is not None and str(completed[2])==USER_A
+    assert conn.execute('select count(*) from rental_bookings').fetchone()[0]==0
+    finish_repair(conn,request_id,ids[0])
+    assert conn.execute('select completed_at from material_repairs where id=%s',(request_id,)).fetchone()[0]==completed[1]
+    assert conn.execute('select status from rental_inventory where id=%s',(ids[0],)).fetchone()[0]=='active'
+    confirm(conn,payload(ids))
+    # Un vecchio consenso non deve chiudere un nuovo intervento sullo stesso codice.
+    conn.execute('reset role')
+    conn.execute("update rental_booking_items set returned_at=now() where rental_inventory_id=%s",(ids[0],))
+    conn.execute('set local role authenticated')
+    new_repair=send_for_repair(conn)
+    with pytest.raises(psycopg.errors.RaiseException),conn.transaction():
+        finish_repair(conn,request_id,ids[0])
+    assert conn.execute('select status from material_repairs where id=%s',(new_repair['id'],)).fetchone()[0]=='in_progress'
+
+
+def test_open_repair_cannot_be_bypassed_by_direct_booking_confirmation(setup):
+    conn,ids,_,_=setup
+    conn.execute('reset role')
+    repair_id=conn.execute("insert into material_repairs(rental_inventory_id,repair_type,created_by) values(%s,'wax',%s) returning id",(ids[0],USER_A)).fetchone()[0]
+    conn.execute('set local role authenticated')
+    with pytest.raises(psycopg.errors.RaiseException,match='Articolo in riparazione'),conn.transaction():
+        confirm(conn,payload(ids))
+    assert conn.execute('select status from material_repairs where id=%s',(repair_id,)).fetchone()[0]=='in_progress'
+
+
+def test_repair_permissions_and_no_repair_for_a_rented_item(setup):
+    conn,ids,_,_=setup
+    today=str(conn.execute("select (now() at time zone 'Europe/Rome')::date").fetchone()[0])
+    confirm(conn,payload(ids,starts_on=today,ends_on=today,expected_total='20'))
+    with pytest.raises(psycopg.errors.RaiseException,match='noleggio in corso'),conn.transaction():
+        send_for_repair(conn)
+    register_return(conn)
+    repair=send_for_repair(conn)
+    with pytest.raises(psycopg.errors.NoDataFound),conn.transaction():
+        finish_repair(conn,repair['id'],ids[0],site=SITE_B)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute("select set_config('request.jwt.claim.sub',%s,true)",(USER_B,))
+        send_for_repair(conn,site=SITE_B)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('set local role anon')
+        finish_repair(conn,repair['id'],ids[0])
+    conn.execute('reset role')
+    conn.execute("update rental_inventory set status='lost' where id=%s",(ids[0],))
+    conn.execute('set local role authenticated')
+    with pytest.raises(psycopg.errors.RaiseException),conn.transaction():
+        finish_repair(conn,repair['id'],ids[0])
+    assert conn.execute('select status from material_repairs where id=%s',(repair['id'],)).fetchone()[0]=='in_progress'
+
+
+def test_repairs_only_accept_skis_and_snowboards(setup):
+    conn,_,_,_=setup
+    category_id,group_id=conn.execute("select c.id,g.id from material_categories c join material_groups g on g.category_id=c.id where c.detail_type='helmet' limit 1").fetchone()
+    data={'category_id':str(category_id),'group_id':str(group_id),'code':'H001',
+          'new_variant':{'brand':'Marca','model':'Casco','details':{'size_label':'M'}}}
+    conn.execute('select skirenting_create_rental_item(%s,%s)',(SITE_A,Jsonb(data)))
+    with pytest.raises(psycopg.errors.InvalidParameterValue),conn.transaction():
+        send_for_repair(conn,code='H001')
+
+
+def test_repair_and_current_rental_cannot_both_claim_an_item(confirmation_database):
+    owner,kwargs,ids,_,_=confirmation_database
+    booking_id=str(uuid4());repair_id=str(uuid4())
+    today=str(owner.execute("select (now() at time zone 'Europe/Rome')::date").fetchone()[0])
+    barrier=Barrier(2)
+    def run(action):
+        try:
+            with psycopg.connect(**kwargs) as conn:
+                conn.execute('set local role authenticated')
+                conn.execute("select set_config('request.jwt.claim.sub',%s,true)",(USER_A,))
+                conn.execute("set local lock_timeout='5s'")
+                barrier.wait(timeout=5)
+                if action=='repair': send_for_repair(conn,repair_id=repair_id)
+                else: confirm(conn,payload(ids,starts_on=today,ends_on=today,expected_total='20'),booking_id)
+            return 'ok'
+        except psycopg.errors.RaiseException:
+            return 'conflict'
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(run,['repair','rental']))
+        assert results.count('ok')==1 and results.count('conflict')==1
+    finally:
+        owner.execute('delete from material_repairs where id=%s',(repair_id,))
+        owner.execute('delete from rental_booking_items where booking_id=%s',(booking_id,))
+        owner.execute('delete from rental_bookings where id=%s',(booking_id,))
+        owner.execute("update rental_inventory set status='active' where id=%s",(ids[0],))

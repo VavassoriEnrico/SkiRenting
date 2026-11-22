@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus, ChartNoAxesCombined, House, Package, ReceiptText, RotateCcw, ShoppingBag, ShoppingCart, Users, Settings2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, ChartNoAxesCombined, House, Boxes, Package, ReceiptText, RotateCcw, ShoppingBag, ShoppingCart, Users, Wrench, Settings2 } from 'lucide-react';
 
 export const navigationSections = [
   {
@@ -27,11 +27,13 @@ export const navigationSections = [
       { href: '/operativita/noleggi', label: 'Noleggi', icon: CalendarPlus },
       { href: '/operativita/vendite', label: 'Vendite', icon: ShoppingCart },
       { href: '/operativita/rientri', label: 'Rientri', icon: RotateCcw },
+      { href: '/operativita/riparazioni', label: 'Riparazioni', icon: Wrench },
     ],
   },
   {
     id: 'inventory', label: 'Magazzino',
     items: [
+      { href: '/magazzino-generale', label: 'Magazzino generale noleggi', icon: Boxes },
       { href: '/materiale-noleggio', label: 'Magazzino noleggio', icon: Package },
       { href: '/materiale-vendita', label: 'Magazzino vendita', icon: ShoppingBag },
     ],

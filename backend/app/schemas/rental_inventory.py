@@ -1,7 +1,9 @@
 from typing import Annotated, Literal
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from app.schemas.operator import LocationRead
 
 
 class CategoryRead(BaseModel):
@@ -62,7 +64,14 @@ class VariantRead(BaseModel):
     accessory_details: AccessoryDetails | None = None
 
 
+class OpenRepairRead(BaseModel):
+    id: UUID
+    repair_type: Literal['edges','wax','edges_and_wax','other']
+    sent_at: datetime
+
+
 class RentalItemRead(BaseModel):
+    open_repair: OpenRepairRead | None = None
     id: UUID
     code: str
     serial_number: str | None = None
@@ -79,6 +88,16 @@ class RentalItemRead(BaseModel):
 class RentalInventoryRead(BaseModel):
     categories: list[CategoryRead]
     items: list[RentalItemRead]
+
+
+class GeneralRentalItemRead(RentalItemRead):
+    location: LocationRead
+
+
+class GeneralRentalInventoryRead(BaseModel):
+    categories: list[CategoryRead]
+    locations: list[LocationRead]
+    items: list[GeneralRentalItemRead]
 
 
 # Inserimento: gli ID esistenti sono alternativi ai dati per creare nuove voci.

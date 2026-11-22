@@ -1,0 +1,25 @@
+import { X } from 'lucide-react';
+import { useEffect,useRef } from 'react';
+import type { Location } from '../../lib/api';
+import { repairTypes } from '../repairs/repair';
+import { rentalStatuses, variantFields } from './rental-inventory';
+import type { GeneralRow } from './general-inventory';
+
+export function GeneralInventoryDialog({row,locations,onClose}:{row:GeneralRow;locations:Location[];onClose:()=>void}){
+  const dialog=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{dialog.current?.showModal();},[]);
+  return <dialog ref={dialog} className="sale-dialog general-inventory-dialog" aria-labelledby="general-inventory-dialog-title" onClose={onClose} onCancel={onClose} onClick={event=>{
+    if(event.target!==event.currentTarget)return;
+    const rect=event.currentTarget.getBoundingClientRect();
+    if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)onClose();
+  }}>
+    <div className="sale-dialog-header"><div><p className="sale-dialog-eyebrow">Magazzino generale noleggi · {row.variant.category.name}</p><h2 id="general-inventory-dialog-title">{row.variant.brand} {row.variant.model}</h2><p className="page-description">{row.units.length} esemplari complessivi</p></div><button type="button" className="icon-button" aria-label="Chiudi elenco esemplari" autoFocus onClick={onClose}><X size={20} aria-hidden="true" /></button></div>
+    <div className="sale-dialog-body"><dl className="sale-details-grid">{variantFields(row.variant).filter(field=>field.label!=='Note modello').map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
+      {locations.map(location=>{
+        const units=row.units.filter(unit=>unit.location.id===location.id).sort((a,b)=>a.code.localeCompare(b.code,'it',{numeric:true}));
+        return <section key={location.id} className="general-location-section" aria-labelledby={`general-location-${location.id}`}><div className="general-location-heading"><h3 id={`general-location-${location.id}`}>{location.name}</h3><span className="rentals-count">{units.length} esemplari</span></div>{units.length===0?<p className="rental-form-hint">Nessun esemplare in questa sede.</p>:<div className="rentals-table-scroll" role="region" aria-label={`Esemplari a ${location.name}`} tabIndex={0}><table className="rentals-table general-units-table"><thead><tr><th scope="col">Codice</th><th scope="col">Stato magazzino</th><th scope="col">Gruppo</th><th scope="col">Matricola</th><th scope="col">Note</th></tr></thead><tbody>{units.map(unit=><tr key={unit.id}><th scope="row" className="unit-code">{unit.code}</th><td><span className={unit.open_repair?'repair-badge':'rental-primary'}>{unit.open_repair?`In riparazione · ${repairTypes[unit.open_repair.repair_type]}`:rentalStatuses[unit.status]}</span>{(!unit.is_rentable||!unit.is_bookable)&&<span className="rental-secondary">Noleggio disabilitato</span>}</td><td>{unit.group.name}</td><td>{unit.serial_number||'—'}</td><td className="history-notes">{unit.notes||'—'}{unit.variant.notes&&<span className="rental-secondary">Note modello: {unit.variant.notes}</span>}</td></tr>)}</tbody></table></div>}</section>;
+      })}
+      <p className="rental-form-hint">Ogni codice identifica un esemplare distinto. Lo stato di magazzino non indica la disponibilità per le date di un noleggio.</p>
+    </div><div className="sale-dialog-footer"><button className="sales-button" type="button" onClick={onClose}>Chiudi</button></div>
+  </dialog>;
+}

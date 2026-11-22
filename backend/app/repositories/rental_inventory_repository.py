@@ -92,3 +92,14 @@ def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: dat
             ):
                 blocked.add(row['rental_inventory_id'])
     return blocked
+
+
+def list_items_for_locations(client: httpx.Client, location_ids: list[str]) -> list[dict]:
+    items = []
+    for start in range(0,len(location_ids),100):
+        identifiers = ','.join(location_ids[start:start+100])
+        items.extend(read_all(client,'rental_inventory',{
+            'select': f'{ITEM_SELECT},location:locations(id,name)',
+            'location_id': f'in.({identifiers})', 'order': 'id',
+        }))
+    return items

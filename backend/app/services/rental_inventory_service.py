@@ -5,9 +5,9 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import HTTPException
 
-from app.repositories import rental_inventory_repository
+from app.repositories import rental_inventory_repository, material_repair_repository
 from app.schemas.rental_inventory import RentalInventoryRead, RentalItemCreate
-from app.services.operator_service import get_authorized_location
+from app.services.operator_service import get_authorized_location, get_operator_session
 
 
 def get_inventory(
@@ -23,6 +23,8 @@ def get_inventory(
             today = datetime.now(ZoneInfo('Europe/Rome')).date()
             blocked = rental_inventory_repository.unavailable_item_ids(client, items, starts_on or today, ends_on or today)
             items = [item for item in items if item['id'] not in blocked]
+            repairs = material_repair_repository.open_for_items(client,items)
+            items = [{**item,'open_repair':repairs.get(item['id'])} for item in items]
         return RentalInventoryRead(
             categories=rental_inventory_repository.list_categories(client),
             items=items,
@@ -102,3 +104,18 @@ def transfer_item(
         raise HTTPException(status, message) from error
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Connessione interrotta. Verifica la sede dell’articolo prima di riprovare.') from error
+
+
+def get_general_inventory(client: httpx.Client, user_id: UUID):
+    operator = get_operator_session(client,user_id)
+    location_ids = [str(location.id) for location in operator.locations]
+    try:
+        items = rental_inventory_repository.list_items_for_locations(client,location_ids)
+        repairs = material_repair_repository.open_for_items(client,items)
+        return {
+            'categories': rental_inventory_repository.list_categories(client),
+            'locations': operator.locations,
+            'items': [{**item,'open_repair':repairs.get(item['id'])} for item in items],
+        }
+    except httpx.HTTPError as error:
+        raise HTTPException(503,'Impossibile caricare il magazzino generale da Supabase.') from error

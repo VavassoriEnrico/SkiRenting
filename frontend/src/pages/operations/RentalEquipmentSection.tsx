@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { apiGet } from '../../lib/api';
-import { isRentable, rentalStatuses, sizeLabel } from '../inventory/rental-inventory';
+import { rentalStatuses, sizeLabel } from '../inventory/rental-inventory';
 import type { RentalInventory, RentalItem } from '../inventory/rental-inventory';
+import { RepairRentalConfirmation } from '../repairs/RepairRentalConfirmation';
 import { RentalSection } from './RentalSection';
 
 const pageSize = 20;
-const canSelect = (item: RentalItem) => isRentable(item) && item.is_bookable;
+const canSelect = (item: RentalItem) => item.is_rentable && item.is_bookable && (item.status === 'active' || (item.status === 'maintenance' && !!item.open_repair));
 
 function unavailableReason(item: RentalItem) {
   if (item.status !== 'active') return rentalStatuses[item.status];
@@ -35,6 +36,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(0);
+  const [pendingRepair, setPendingRepair] = useState<RentalItem | null>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const currentSelection = useRef({ selected, onRemove });
   currentSelection.current = { selected, onRemove };
@@ -45,12 +47,12 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
   useEffect(() => {
     if (!locationId) return;
     const controller = new AbortController();
-    setInventory(null); setLoadError('');
+    setInventory(null); setLoadError(''); setPendingRepair(null);
     apiGet<RentalInventory>(inventoryPath, token, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         setInventory(result);
-        const availableIds = new Set(result.items.map((item) => item.id));
+        const availableIds = new Set(result.items.filter((item) => !item.open_repair).map((item) => item.id));
         const unavailable = currentSelection.current.selected.filter((item) => !availableIds.has(item.id));
         unavailable.forEach((item) => currentSelection.current.onRemove(item.id));
         if (unavailable.length) {
@@ -80,6 +82,8 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
       setError(`L’articolo ${item.code} è già stato aggiunto al noleggio.`);
     } else if (!canSelect(item)) {
       setError(`L’articolo ${item.code} non può essere aggiunto: ${unavailableReason(item).toLocaleLowerCase('it-IT')}.`);
+    } else if (item.open_repair) {
+      setPendingRepair(item);
     } else {
       onAdd(item); setCode(''); setMessage(`Articolo ${item.code} aggiunto.`);
     }
@@ -122,7 +126,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
                     <table className="rentals-table rental-equipment-table"><caption className="sr-only">Articoli della sede attiva per la selezione manuale</caption>
                       <thead><tr><th scope="col">Codice</th><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Misura</th><th scope="col">Gruppo</th><th scope="col">Selezione</th></tr></thead>
                       <tbody>{pageItems.map((item) => <tr key={item.id}>
-                        <th scope="row" className="unit-code">{item.code}</th><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td>{item.group.name}</td>
+                        <th scope="row" className="unit-code">{item.code}{item.open_repair && <span className="repair-badge">In riparazione</span>}</th><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td>{item.group.name}</td>
                         <td>{!canSelect(item) ? <span className="rental-secondary">{unavailableReason(item)}</span> : <button type="button" className="sales-button" disabled={selectedIds.has(item.id)} aria-label={`${selectedIds.has(item.id) ? 'Già aggiunto' : 'Aggiungi'} ${item.code}`} onClick={() => add(item)}><Plus size={14} aria-hidden="true" />{selectedIds.has(item.id) ? 'Aggiunto' : 'Aggiungi'}</button>}</td>
                       </tr>)}
                       {results.length === 0 && <tr><td colSpan={6}><div className="rentals-empty">Nessun materiale trovato.</div></td></tr>}</tbody>
@@ -132,6 +136,12 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
                 </div>
               </>}
 
+        {pendingRepair && locationId && <RepairRentalConfirmation item={pendingRepair} token={token} locationId={locationId} onClose={() => { setPendingRepair(null); setAttempt((value) => value + 1); codeInput.current?.focus(); }} onCompleted={(item) => {
+          setPendingRepair(null);
+          if (!canSelect(item)) { setError('Articolo non più disponibile. Ripeti la ricerca.'); setAttempt((value) => value + 1); return; }
+          setInventory((current) => current ? { ...current, items: current.items.map((entry) => entry.id === item.id ? item : entry) } : current);
+          onAdd(item); setCode(''); setMessage(`Articolo ${item.code} aggiunto. Riparazione conclusa.`); codeInput.current?.focus();
+        }} />}
         <h3 className="rental-equipment-selected-title">Articoli selezionati ({selected.length})</h3>
         {selected.length === 0 ? <p className="rental-form-hint">Non hai ancora aggiunto materiale al noleggio.</p>
           : <div className="rentals-table-scroll" role="region" aria-label="Articoli selezionati per il noleggio" tabIndex={0}>

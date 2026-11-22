@@ -5,9 +5,11 @@ import { AnalyticsPage } from '../pages/analytics/AnalyticsPage';
 import { DashboardPage } from '../pages/dashboard/DashboardPage';
 import { CustomersPage } from '../pages/customers/CustomersPage';
 import { RentalsPage } from '../pages/rentals/RentalsPage';
+import { GeneralInventoryPage } from '../pages/inventory/GeneralInventoryPage';
 import { InventoryPage } from '../pages/inventory/InventoryPage';
 import { SalesPage } from '../pages/sales/SalesPage';
 import { OperationsPage } from '../pages/operations/OperationsPage';
+import { RepairsPage } from '../pages/repairs/RepairsPage';
 import { ReturnsPage } from '../pages/returns/ReturnsPage';
 import { RequireAuth } from '../auth/RequireAuth';
 import { LoginPage } from '../pages/login/LoginPage';
@@ -32,6 +34,8 @@ export function App() {
         <Route path="/operativita/noleggi" element={<OperationsPage mode="rental" />} />
         <Route path="/operativita/vendite" element={<OperationsPage mode="sale" />} />
         <Route path="/operativita/rientri" element={<ReturnsPage />} />
+        <Route path="/operativita/riparazioni" element={<RepairsPage />} />
+        <Route path="/magazzino-generale" element={<GeneralInventoryPage />} />
         <Route path="/materiale-noleggio" element={<InventoryPage key="rental" mode="rental" />} />
         <Route path="/materiale-vendita" element={<InventoryPage key="sale" mode="sale" />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

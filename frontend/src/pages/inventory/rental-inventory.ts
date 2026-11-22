@@ -1,3 +1,5 @@
+import type { OpenRepair } from '../repairs/repair';
+
 export type RentalCategory = { id: string; code: string; name: string };
 type LengthDetails = { length_cm: number | null; radius_m: number | null; style: string | null };
 export type RentalVariant = {
@@ -12,6 +14,7 @@ export type RentalVariant = {
   accessory_details: { size_label: string | null } | null;
 };
 export type RentalItem = {
+  open_repair?: OpenRepair | null;
   id: string; code: string; serial_number: string | null;
   purchase_price?: number | null; legacy_sold_price?: number | null;
   status: 'active' | 'maintenance' | 'retired' | 'sold' | 'lost';

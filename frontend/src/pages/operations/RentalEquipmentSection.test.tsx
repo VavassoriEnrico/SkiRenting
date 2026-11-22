@@ -31,6 +31,7 @@ beforeEach(() => {
   mocks.auth.location = { id: 'site-a', name: 'Madesimo' };
   mocks.get.mockReset().mockImplementation((path: string) => Promise.resolve(path === '/customers' || path === '/hotels' ? [] : inventory));
   mocks.post.mockReset();
+  HTMLDialogElement.prototype.showModal = vi.fn(function(this:HTMLDialogElement) { this.setAttribute('open',''); });
 });
 afterEach(cleanup);
 
@@ -127,6 +128,40 @@ describe('Materiale del noleggio', () => {
     scan('+001');
     expect(screen.getByRole('alert').textContent).toContain('non disponibile');
     expect(screen.getByText('Articoli selezionati (0)')).toBeTruthy();
+  });
+
+  it.each(['code','manual'])('asks before selecting a material in repair through %s', async (mode) => {
+    const repairing: RentalItem = { ...item,status:'maintenance',open_repair:{id:'repair',repair_type:'edges_and_wax',sent_at:'2026-11-22T10:00:00Z'} };
+    mocks.get.mockImplementation((path:string)=>Promise.resolve(path==='/customers'||path==='/hotels'?[]:{...inventory,items:[repairing]}));
+    mocks.post.mockResolvedValue({...item,open_repair:null});
+    await open();
+    if(mode==='manual') {
+      fireEvent.click(screen.getByRole('button',{name:'Ricerca manuale'}));
+      expect(screen.getByText('In riparazione')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button',{name:'Aggiungi +001'}));
+    } else scan('+001');
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('Articoli selezionati (0)')).toBeTruthy();
+    expect(mocks.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Annulla'}));
+    await screen.findByRole('button',{name:'Aggiungi codice'});
+    expect(mocks.post).not.toHaveBeenCalled();
+    scan('+001');
+    fireEvent.click(screen.getByRole('button',{name:'Sì, noleggia e concludi riparazione'}));
+    await screen.findByRole('button',{name:'Rimuovi +001'});
+    expect(mocks.post).toHaveBeenCalledWith('/locations/site-a/repairs/repair/complete','token',{rental_inventory_id:'unit-one'},expect.any(AbortSignal));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('does not add the article if completing its repair fails', async () => {
+    const repairing: RentalItem = {...item,open_repair:{id:'repair',repair_type:'wax',sent_at:'2026-11-22T10:00:00Z'}};
+    mocks.get.mockImplementation((path:string)=>Promise.resolve(path==='/customers'||path==='/hotels'?[]:{...inventory,items:[repairing]}));
+    mocks.post.mockRejectedValue(new Error('Riparazione cambiata'));
+    await open();scan('+001');
+    fireEvent.click(screen.getByRole('button',{name:'Sì, noleggia e concludi riparazione'}));
+    await screen.findByRole('alert');
+    expect(screen.getByText('Articoli selezionati (0)')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('reports load errors and retries without claiming the inventory is empty', async () => {

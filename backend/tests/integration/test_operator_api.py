@@ -235,8 +235,46 @@ def api(monkeypatch):
                 "id": USER_ID, "category_id": LOCATION_A, "group_id": LOCATION_A,
                 "variant_id": LOCATION_A, "code": body["p_data"]["code"],
             })
+        if request.url.path == '/rest/v1/material_repairs':
+            if state.get('repair_error'):
+                return httpx.Response(400,json={'code':state['repair_error'],'message':'Riparazione non disponibile'})
+            assert request.url.params['status'] == 'eq.in_progress'
+            rows = [r.copy() for r in state.get('repairs',[]) if r.get('status','in_progress')=='in_progress']
+            if 'rental_inventory_id' in request.url.params:
+                ids = request.url.params['rental_inventory_id'][4:-1].split(',')
+                rows = [r for r in rows if r['rental_inventory_id'] in ids]
+            else:
+                assert request.url.params['item.location_id'] == f'eq.{LOCATION_A}'
+                rows = [r for r in rows if r.get('location_id',LOCATION_A)==LOCATION_A]
+                items = {i['id']:i for i in state.get('items',[])}
+                for row in rows: row['item'] = items[row['rental_inventory_id']]
+            offset = int(request.url.params['offset'])
+            return httpx.Response(200,json=rows[offset:offset+300])
+        if request.url.path in ('/rest/v1/rpc/skirenting_create_material_repair','/rest/v1/rpc/skirenting_complete_material_repair'):
+            data = json.loads(request.content)
+            state['repair_payload'] = data
+            if state.get('repair_error'):
+                return httpx.Response(400,json={'code':state['repair_error'],'message':'Riparazione non disponibile'})
+            if request.url.path.endswith('create_material_repair'):
+                item = next(i for i in state['items'] if i['code']==data['p_code'])
+                item['status'] = 'maintenance'
+                state.setdefault('repairs',[]).append({'id':data['p_repair_id'],'rental_inventory_id':item['id'],
+                    'repair_type':data['p_repair_type'],'sent_at':'2026-11-22T10:00:00Z','notes':data['p_notes'],'status':'in_progress'})
+            else:
+                item = next(i for i in state['items'] if i['id']==data['p_item_id'])
+                item['status'] = 'active'
+                next(r for r in state['repairs'] if r['id']==data['p_repair_id'])['status'] = 'completed'
+            return httpx.Response(200,json={'id':data['p_repair_id'],'rental_inventory_id':item['id']})
         if request.url.path == "/rest/v1/rental_inventory":
-            assert request.url.params["location_id"] == f"eq.{LOCATION_A}"
+            location_filter = request.url.params["location_id"]
+            general = location_filter.startswith('in.(')
+            if general:
+                allowed = location_filter[4:-1].split(',')
+                assert set(allowed) == set(state['locations'])
+                assert 'location:locations(id,name)' in request.url.params['select']
+                assert request.method == 'GET'
+            else:
+                assert location_filter == f"eq.{LOCATION_A}"
             assert request.url.params["order"] == "id"
             if state.get("inventory_unavailable"):
                 return httpx.Response(503, json={"message": "Database unavailable"})
@@ -244,9 +282,12 @@ def api(monkeypatch):
             # Simulate a configured Supabase cap smaller than the requested page.
             page_size = min(int(request.url.params["limit"]), 300)
             rows = state.get("items", [])
+            if general:
+                rows = [row for row in rows if row['location']['id'] in allowed]
             if "id" in request.url.params:
-                requested = request.url.params["id"][4:-1].split(',')
-                rows = [row for row in rows if row["id"] in requested]
+                identifier = request.url.params['id']
+                requested = [identifier[3:]] if identifier.startswith('eq.') else identifier[4:-1].split(',')
+                rows = [row for row in rows if row['id'] in requested]
             return httpx.Response(200, json=rows[offset:offset + page_size])
         raise AssertionError(f"Unexpected request: {request.url}")
 
@@ -1333,3 +1374,95 @@ def test_customer_bookings_does_not_truncate_at_supabase_row_limits(api):
     assert first['id'] == newest['id']
     assert first['total'] == '854.25'  # Sconto storico 15% di 1005.
     assert first['paid_amount'] == '1005'
+
+
+def test_repairs_flow_annotates_inventory_and_finishes_only_on_explicit_post(api):
+    client,state = api
+    item = rental_item(0)
+    state['items'] = [item]
+    path = f'/api/v1/locations/{LOCATION_A}/repairs'
+    data = {'repair_id':USER_ID,'code':item['code'],'repair_type':'edges_and_wax','notes':'Lamine rovinate'}
+    response = client.post(path,headers=HEADERS,json=data)
+    assert response.status_code == 201
+    assert client.get(path,headers=HEADERS).json()[0]['item']['code'] == item['code']
+    inventory = client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory?available_only=true',headers=HEADERS).json()
+    assert inventory['items'][0]['status'] == 'maintenance'
+    assert inventory['items'][0]['open_repair']['id'] == USER_ID
+    assert state['repairs'][0]['status'] == 'in_progress'
+    completed = client.post(f'{path}/{USER_ID}/complete',headers=HEADERS,json={'rental_inventory_id':item['id']})
+    assert completed.status_code == 200
+    assert completed.json()['status'] == 'active' and completed.json()['open_repair'] is None
+    assert client.get(path,headers=HEADERS).json() == []
+
+
+@pytest.mark.parametrize('code,status',[('PGRST202',503),('42501',403),('P0002',404),('P0001',409),('23505',409),('22023',422)])
+def test_repairs_authorization_validation_and_errors(api,code,status):
+    client,state = api
+    path = f'/api/v1/locations/{LOCATION_A}/repairs'
+    data = {'repair_id':USER_ID,'code':'+001','repair_type':'wax'}
+    assert client.get(path).status_code == 401
+    assert client.post(path,json=data).status_code == 401
+    assert client.get(path.replace(LOCATION_A,UNASSIGNED_LOCATION),headers=HEADERS).status_code == 403
+    assert client.post(path.replace(LOCATION_A,UNASSIGNED_LOCATION),headers=HEADERS,json=data).status_code == 403
+    assert client.post(path,headers=HEADERS,json={**data,'code':''}).status_code == 422
+    assert 'repair_payload' not in state
+    state['repair_error'] = code
+    response = client.post(path,headers=HEADERS,json=data)
+    assert response.status_code == status
+    if code=='PGRST202': assert '019_material_repairs_workflow.sql' in response.json()['detail']
+
+
+def test_general_inventory_reads_every_authorized_site_and_unit_with_repairs(api):
+    client, state = api
+    state['items'] = [
+        {**rental_item(index), 'location': {'id': site, 'name': name}}
+        for index, (site, name) in enumerate(
+            [(LOCATION_A, 'Madesimo')] * 700 + [(LOCATION_B, 'Boscone')] * 605
+            + [(UNASSIGNED_LOCATION, 'Sede esclusa')]
+        )
+    ]
+    state['items'][0]['status'] = 'maintenance'
+    state['repairs'] = [{
+        'id': USER_ID, 'rental_inventory_id': state['items'][0]['id'],
+        'repair_type': 'wax', 'sent_at': '2026-11-22T10:00:00Z',
+    }]
+    response = client.get('/api/v1/rental-inventory', headers=HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body['items']) == 1305
+    assert len({item['id'] for item in body['items']}) == 1305
+    assert {item['location']['name'] for item in body['items']} == {'Madesimo', 'Boscone'}
+    assert {location['id'] for location in body['locations']} == {LOCATION_A, LOCATION_B}
+    assert body['items'][0]['open_repair']['repair_type'] == 'wax'
+    assert body['items'][1]['open_repair'] is None
+    requests = [r for r in state['requests'] if r.url.path.endswith('/rental_inventory')]
+    assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
+    assert all(r.method == 'GET' for r in state['requests'])
+
+
+def test_general_inventory_rechecks_authorized_locations(api):
+    client, state = api
+    state['locations'] = [LOCATION_B]
+    state['items'] = [
+        {**rental_item(0), 'location': {'id': LOCATION_A, 'name': 'Madesimo'}},
+        {**rental_item(1), 'location': {'id': LOCATION_B, 'name': 'Boscone'}},
+    ]
+    response = client.get('/api/v1/rental-inventory', headers=HEADERS)
+    assert response.status_code == 200
+    assert [item['code'] for item in response.json()['items']] == ['+01']
+
+
+@pytest.mark.parametrize('profile,locations', [(None,[LOCATION_A]), (PROFILE,[])])
+def test_general_inventory_checks_profile_and_locations_before_reading(api,profile,locations):
+    client,state=api
+    state['profile'],state['locations']=profile,locations
+    assert client.get('/api/v1/rental-inventory',headers=HEADERS).status_code == 403
+    assert not any('inventory' in r.url.path or 'material' in r.url.path for r in state['requests'])
+
+
+def test_general_inventory_requires_login_and_reports_database_failure(api):
+    client,state=api
+    assert client.get('/api/v1/rental-inventory').status_code == 401
+    assert not state['requests']
+    state['inventory_unavailable']=True
+    assert client.get('/api/v1/rental-inventory',headers=HEADERS).status_code == 503

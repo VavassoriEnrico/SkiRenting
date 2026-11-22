@@ -143,7 +143,7 @@ Le date complete passano come `starts_on` e `ends_on`; cambiarle ricarica l'elen
 e rimuove dalla selezione gli esemplari non più disponibili, con un avviso.
 La disponibilità si aggiorna al cambio delle date. Il codice manuale può
 aggiungere solo esemplari restituiti dalla stessa ricerca di disponibilità.
-Il magazzino generale continua a mostrare tutti gli esemplari.
+Il magazzino generale noleggi continua a mostrare tutti gli esemplari.
 La selezione resta nella bozza modificando cliente;
 si azzera al cambio sede/sessione, uscita o ricaricamento. La sola selezione non
 crea prenotazioni né modifica gli esemplari. La conferma controlla la disponibilità
@@ -260,3 +260,28 @@ aggiuntiva permette nascita, livello e codici lingua/paese facoltativi. Un clien
 esistente con questi dati li mostra già compilati in sola lettura; non vengono
 sovrascritti selezionandolo per una prenotazione. L'importazione dei vecchi clienti
 non è ancora stata effettuata.
+
+
+Operatività contiene anche Riparazioni (`/operativita/riparazioni`), con elenco reale
+per sede degli interventi aperti e ricerca per codice, marca/modello, misura e tipo.
+Un form permette di segnare sci/snowboard in riparazione tramite codice, intervento
+e note. Richiede le query 018 e 019. L'elenco non contiene dati dimostrativi.
+Nel nuovo noleggio, ricerca manuale e inserimento codice riconoscono open_repair
+e aprono la conferma «L'oggetto era in riparazione, sicuro di volerlo noleggiare?».
+Annulla non modifica né riparazione né selezione; il consenso completa l'intervento
+nel database e soltanto dopo aggiunge l'articolo aggiornato alla bozza. La chiusura
+è immediata, non dipende dalla conferma successiva della prenotazione e non viene
+annullata rimuovendo l'articolo dalla bozza. Gli errori non aggiungono materiale.
+Cambio sede/sessione e uscita dalla pagina annullano le richieste pendenti; gli
+articoli occupati e le manutenzioni prive di intervento aperto restano non selezionabili.
+
+Magazzino contiene anche **Magazzino generale noleggi** (`/magazzino-generale`): vista
+in sola lettura del materiale da noleggio di tutte le sedi autorizzate, indipendente
+dalla sede selezionata nella sidebar. Raggruppa per categoria e caratteristiche
+fisiche (marca, modello, anno, misure, raggio, taglia, colore ecc.), anche quando
+il catalogo contiene varianti equivalenti in gruppi tariffari diversi. La ricerca
+comprende codici, sede e gruppo; cercare un codice conserva tutti gli esemplari
+del gruppo. Aprendo una riga, il dialogo mostra gli esemplari separati per sede,
+con codice univoco, stato di magazzino/intervento aperto, gruppo, matricola e note.
+La quantità è il totale censito, non la disponibilità per un periodo di noleggio.
+Creazione e trasferimento restano nel magazzino noleggio della singola sede.

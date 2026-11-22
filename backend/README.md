@@ -345,3 +345,29 @@ Testate, materiale e pagamenti vengono letti separatamente e con paginazione,
 riutilizzando gli importi storici e lo sconto salvato per evitare somme duplicate.
 Il conteggio non usa visite/pagato del CSV legacy e non inventa prenotazioni.
 Non richiede migrazioni o scritture: usa le tabelle e gli indici esistenti.
+
+## Riparazioni operative
+
+Dopo la query 019, `GET /locations/{id}/repairs` restituisce gli interventi aperti
+della sede, con codice, caratteristiche del materiale, tipo, invio e note.
+`POST /locations/{id}/repairs` accetta repair_id, code, repair_type e notes;
+`POST /locations/{id}/repairs/{repair_id}/complete` accetta rental_inventory_id.
+Le mutazioni passano da RPC con controllo sede e lock dell'esemplare. Nessuna
+scrittura diretta alle riparazioni viene concessa agli operatori.
+L'inventario per la selezione (`available_only=true`) include open_repair:
+maintenance con intervento aperto può essere scelto solo dopo il consenso che
+chiude la riparazione. Manutenzione senza intervento, materiale disabilitato,
+perso/venduto e articoli già occupati restano bloccati. I ritentativi della chiusura
+non cambiano la data e non chiudono altri interventi aperti successivamente.
+Per l'elenco sono usate letture paginate e filtri server per la sede corrente.
+
+## Magazzino generale
+
+`GET /api/v1/rental-inventory` restituisce categorie, sedi autorizzate e singoli
+esemplari da noleggio, ognuno con `location: {id, name}` e `open_repair` eventuale.
+Verifica il profilo e le assegnazioni dell'operatore a ogni richiesta, applica
+il filtro sulle sedi anche nella lettura REST e usa letture paginate (incluse
+le riparazioni aperte). Non dipende dalla sede selezionata nel frontend e non
+esegue scritture. Il frontend aggrega gli esemplari per caratteristiche fisiche;
+identità, sede e dati di ciascun codice restano separati nel database.
+Non richiede nuove migrazioni oltre a quelle già usate dal magazzino/riparazioni.
