@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 
-import { navigationSections } from '../../config/navigation';
+import { getNavigationSections } from '../../config/navigation';
+import { useAuth } from '../../auth/AuthProvider';
 import { LocationSelector } from './LocationSelector';
 
 type SidebarProps = {
@@ -9,6 +10,8 @@ type SidebarProps = {
 };
 
 export function Sidebar({ collapsed = false, onNavigate }: SidebarProps) {
+  const { location } = useAuth();
+  const navigationSections = getNavigationSections(location?.name);
   return (
     <>
       <NavLink
@@ -39,8 +42,8 @@ export function Sidebar({ collapsed = false, onNavigate }: SidebarProps) {
                   key={href}
                   to={href}
                   onClick={onNavigate}
-                  title={collapsed ? label : undefined}
-                  aria-label={collapsed ? label : undefined}
+                  title={collapsed ? `${section.label} · ${label}` : undefined}
+                  aria-label={collapsed ? `${section.label} · ${label}` : undefined}
                   className={({ isActive }) => `navigation-link${isActive ? ' is-active' : ''}`}
                 >
                   <Icon size={16} aria-hidden="true" />

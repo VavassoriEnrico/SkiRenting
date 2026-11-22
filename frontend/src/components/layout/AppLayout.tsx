@@ -2,7 +2,7 @@ import { PanelLeftClose } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
-import { navigationSections } from '../../config/navigation';
+import { getNavigationSections } from '../../config/navigation';
 import { useAuth } from '../../auth/AuthProvider';
 
 import { Header } from './Header';
@@ -16,10 +16,10 @@ export function AppLayout() {
   const mobileMenu = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const section = navigationSections.find((entry) => entry.items.some((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`))));
+    const section = getNavigationSections(location?.name).find((entry) => entry.items.some((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`))));
     const page = section?.items.find((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`)));
     document.title = page ? `${page.label} · ${section?.label} · SkiRenting` : 'SkiRenting';
-  }, [pathname]);
+  }, [pathname, location?.name]);
 
   useEffect(() => {
     const dialog = mobileMenu.current;

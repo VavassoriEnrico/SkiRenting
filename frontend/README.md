@@ -285,3 +285,13 @@ del gruppo. Aprendo una riga, il dialogo mostra gli esemplari separati per sede,
 con codice univoco, stato di magazzino/intervento aperto, gruppo, matricola e note.
 La quantità è il totale censito, non la disponibilità per un periodo di noleggio.
 Creazione e trasferimento restano nel magazzino noleggio della singola sede.
+
+La voce **Magazzino generale vendite** (`/magazzino-generale-vendite`) usa la stessa
+pagina dei noleggi con ricerca, filtro categoria, ordinamento e dettaglio per sede,
+aggiungendo il prezzo unitario anche tra gli ordinamenti. Legge `/sale-inventory`:
+nessun dato dimostrativo, né copia del materiale da noleggio. Le quantità sono
+sommate dalle giacenze reali; prezzi diversi producono un intervallo nella tabella,
+con i singoli prezzi nel dettaglio della sede. Null viene mostrato come «Da definire»
+e resta distinto da zero. Le giacenze esaurite sono escluse dall'API.
+Il modello vendita attuale è per variante/sede/quantità, senza codici dei singoli
+pezzi: il dettaglio mostra quantità, prezzo e note senza inventare esemplari.

@@ -2,8 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GeneralInventoryPage } from './GeneralInventoryPage';
-import { groupGeneralItems, sortGeneralRows } from './general-inventory';
-import type { GeneralItem } from './general-inventory';
+import { groupGeneralItems, groupSaleStock, rowQuantity, rowSalePrice, salePrice, sortGeneralRows } from './general-inventory';
+import type { GeneralItem, SaleStock } from './general-inventory';
 import type { RentalVariant } from './rental-inventory';
 
 const mocks = vi.hoisted(() => ({ apiGet: vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'a', name: 'Madesimo' } } }));
@@ -142,5 +142,58 @@ describe('Ordinamento magazzino generale', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'MODEL12' } });
     expect(table.getByText('MODEL12')).toBeTruthy();
     expect(table.queryByText('MODEL30')).toBeNull();
+  });
+});
+
+
+const saleItems:SaleStock[] = [
+  { id:'stock1', variant:first.variant, location:locations[0], quantity:3, price:199.90, notes:'Con attacchi' },
+  { id:'stock2', variant:{...first.variant,id:'equivalent'}, location:locations[1], quantity:2, price:210, notes:null },
+];
+
+describe('Magazzino generale vendite', () => {
+  it('loads empty real stock with the same filters and sorting controls', async () => {
+    mocks.apiGet.mockResolvedValue({ locations, categories:[category], items:[] });
+    render(<GeneralInventoryPage mode="sale" />);
+    expect(await screen.findByText('Nessun materiale registrato nelle sedi autorizzate')).toBeTruthy();
+    expect(mocks.apiGet).toHaveBeenCalledWith('/sale-inventory','token',expect.any(AbortSignal));
+    expect(screen.getByRole('heading',{name:'Magazzino generale vendite'})).toBeTruthy();
+    expect(screen.getByRole('combobox',{name:'Ordina per'})).toBeTruthy();
+    expect(screen.getByRole('columnheader',{name:'Prezzo unitario'})).toBeTruthy();
+    expect(screen.queryByRole('button',{name:'Aggiorna elenco'})).toBeNull();
+    expect(screen.queryByText('ANOMALY')).toBeNull();
+  });
+
+  it('sums actual quantities, shows price ranges and opens real prices for each site', async () => {
+    mocks.apiGet.mockResolvedValue({ locations, categories:[category], items:saleItems });
+    render(<GeneralInventoryPage mode="sale" />);
+    await screen.findByText('ANOMALY');
+    expect(screen.getByText(/5 esemplari/)).toBeTruthy();
+    expect(screen.getByText(/199,90\s€ – 210,00\s€/)).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Boscone'}});
+    fireEvent.click(screen.getByRole('button',{name:/Apri esemplari/}));
+    const madesimo=within(screen.getByRole('region',{name:'Esemplari a Madesimo'}));
+    const boscone=within(screen.getByRole('region',{name:'Esemplari a Boscone'}));
+    expect(madesimo.getByText('3')).toBeTruthy();
+    expect(madesimo.getByText(/199,90\s€/)).toBeTruthy();
+    expect(madesimo.getByText('Con attacchi')).toBeTruthy();
+    expect(boscone.getByText('2')).toBeTruthy();
+    expect(boscone.getByText(/210,00\s€/)).toBeTruthy();
+    expect(screen.queryByText('Stato magazzino')).toBeNull();
+    expect(screen.queryByText('SKI001')).toBeNull();
+  });
+
+  it('distinguishes zero prices from unknown prices and sorts quantities and prices numerically', () => {
+    const rows=groupSaleStock([
+      ...saleItems,
+      {...saleItems[0],id:'stock3',variant:{...first.variant,model:'ZERO'},quantity:1,price:0},
+      {...saleItems[0],id:'stock4',variant:{...first.variant,model:'UNKNOWN'},quantity:10,price:null},
+    ]);
+    expect(sortGeneralRows(rows,'quantity','desc').map(rowQuantity)).toEqual([10,5,1]);
+    expect(sortGeneralRows(rows,'price','asc').map(row=>row.variant.model)).toEqual(['ZERO','ANOMALY','UNKNOWN']);
+    expect(rowSalePrice(rows.find(row=>row.variant.model==='ZERO')!)).toBe(salePrice(0));
+    expect(rowSalePrice(rows.find(row=>row.variant.model==='UNKNOWN')!)).toBe('Da definire');
+    const mixed=groupSaleStock([...saleItems,{...saleItems[0],id:'unknown-price',price:null}]);
+    expect(rowSalePrice(mixed[0])).toContain('altri da definire');
   });
 });

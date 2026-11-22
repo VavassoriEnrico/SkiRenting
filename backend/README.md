@@ -371,3 +371,11 @@ le riparazioni aperte). Non dipende dalla sede selezionata nel frontend e non
 esegue scritture. Il frontend aggrega gli esemplari per caratteristiche fisiche;
 identità, sede e dati di ciascun codice restano separati nel database.
 Non richiede nuove migrazioni oltre a quelle già usate dal magazzino/riparazioni.
+
+`GET /api/v1/sale-inventory` fornisce il magazzino generale vendite dalle giacenze
+`public.sale_inventory`, limitate alle sedi dell'operatore e a quantità positive.
+Restituisce categorie, sedi e righe con id, variante completa, sede, quantità,
+prezzo unitario nullable e note. Usa lo stesso contesto JWT e letture paginate;
+non legge materiale da noleggio né riparazioni e non effettua scritture.
+Richiede la tabella già prevista dalla migrazione 002, senza nuove query.
+Il modello attuale non contiene codici per singolo pezzo, né righe di storico vendite.

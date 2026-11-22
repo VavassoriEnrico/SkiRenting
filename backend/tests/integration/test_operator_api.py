@@ -265,6 +265,19 @@ def api(monkeypatch):
                 item['status'] = 'active'
                 next(r for r in state['repairs'] if r['id']==data['p_repair_id'])['status'] = 'completed'
             return httpx.Response(200,json={'id':data['p_repair_id'],'rental_inventory_id':item['id']})
+        if request.url.path == '/rest/v1/sale_inventory':
+            assert request.method == 'GET'
+            allowed = request.url.params['location_id'][4:-1].split(',')
+            assert set(allowed) == set(state['locations'])
+            assert request.url.params['quantity'] == 'gt.0'
+            assert request.url.params['order'] == 'id'
+            assert 'location:locations(id,name)' in request.url.params['select']
+            if state.get('sale_inventory_unavailable'):
+                return httpx.Response(503, json={'message': 'Unavailable'})
+            rows = [row for row in state.get('sale_items', [])
+                    if row['location']['id'] in allowed and row['quantity'] > 0]
+            offset = int(request.url.params['offset'])
+            return httpx.Response(200, json=rows[offset:offset + 300])
         if request.url.path == "/rest/v1/rental_inventory":
             location_filter = request.url.params["location_id"]
             general = location_filter.startswith('in.(')
@@ -1466,3 +1479,52 @@ def test_general_inventory_requires_login_and_reports_database_failure(api):
     assert not state['requests']
     state['inventory_unavailable']=True
     assert client.get('/api/v1/rental-inventory',headers=HEADERS).status_code == 503
+
+
+def test_general_sale_inventory_reads_authorized_stock_prices_and_all_pages(api):
+    client, state = api
+    state['sale_items'] = [
+        {'id': str(UUID(int=index+1)), 'quantity': 3, 'price': '199.90', 'notes': None,
+         'variant': rental_item(0)['variant'], 'location': {'id': site, 'name': name}}
+        for index, (site,name) in enumerate(
+            [(LOCATION_A,'Madesimo')]*700+[(LOCATION_B,'Boscone')]*605
+            +[(UNASSIGNED_LOCATION,'Esclusa')]
+        )
+    ]
+    state['sale_items'][0]['price'] = None
+    state['sale_items'][1]['price'] = '0.00'
+    state['sale_items'].append({**state['sale_items'][0], 'id': USER_ID, 'quantity': 0})
+    response = client.get('/api/v1/sale-inventory',headers=HEADERS)
+    assert response.status_code == 200
+    items = response.json()['items']
+    assert len(items) == 1305
+    assert sum(item['quantity'] for item in items) == 3915
+    assert items[0]['price'] is None
+    assert items[1]['price'] == 0
+    assert items[2]['price'] == 199.90
+    assert {item['location']['name'] for item in items} == {'Madesimo','Boscone'}
+    requests = [r for r in state['requests'] if r.url.path.endswith('/sale_inventory')]
+    assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
+    assert all(r.method == 'GET' for r in state['requests'])
+    state['locations'] = [LOCATION_B]
+    response = client.get('/api/v1/sale-inventory',headers=HEADERS)
+    assert len(response.json()['items']) == 605
+
+
+def test_general_sale_inventory_empty_and_failure(api):
+    client,state=api
+    response=client.get('/api/v1/sale-inventory',headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['items'] == []
+    state['sale_inventory_unavailable']=True
+    assert client.get('/api/v1/sale-inventory',headers=HEADERS).status_code == 503
+
+
+@pytest.mark.parametrize('profile,locations',[(None,[LOCATION_A]),(PROFILE,[])])
+def test_general_sale_inventory_requires_operator_and_locations(api,profile,locations):
+    client,state=api
+    assert client.get('/api/v1/sale-inventory').status_code == 401
+    assert not state['requests']
+    state['profile'],state['locations']=profile,locations
+    assert client.get('/api/v1/sale-inventory',headers=HEADERS).status_code == 403
+    assert not any('inventory' in r.url.path or 'material' in r.url.path for r in state['requests'])

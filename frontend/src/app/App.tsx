@@ -36,6 +36,7 @@ export function App() {
         <Route path="/operativita/rientri" element={<ReturnsPage />} />
         <Route path="/operativita/riparazioni" element={<RepairsPage />} />
         <Route path="/magazzino-generale" element={<GeneralInventoryPage />} />
+        <Route path="/magazzino-generale-vendite" element={<GeneralInventoryPage mode="sale" />} />
         <Route path="/materiale-noleggio" element={<InventoryPage key="rental" mode="rental" />} />
         <Route path="/materiale-vendita" element={<InventoryPage key="sale" mode="sale" />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
