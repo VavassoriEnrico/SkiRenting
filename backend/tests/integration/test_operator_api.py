@@ -86,6 +86,15 @@ def api(monkeypatch):
             payload=data['p_data']
             return httpx.Response(200,json={'id':data['p_booking_id'],'booking_number':130,'starts_on':payload['starts_on'],
                 'ends_on':payload['expected_return_date'],'status':'confirmed','total':'150','paid_amount':'0','balance':'150','rental_kind':'seasonal'})
+        if request.url.path == '/rest/v1/rpc/skirenting_delete_rental_booking':
+            data=json.loads(request.content)
+            state['delete_booking_payload']=data
+            if state.get('delete_booking_error'):
+                return httpx.Response(400,json={'code':state['delete_booking_error'],'message':'Eliminazione non disponibile'})
+            for row in state.get('bookings',[]):
+                if row['id']==data['p_booking_id'] and row['location_id']==data['p_location_id']:
+                    row['deleted_at']='2026-11-23T12:00:00Z'
+            return httpx.Response(200,json=None)
         if request.url.path == "/rest/v1/rental_bookings":
             assert request.method == "GET"
             if 'customer_id' in request.url.params:
@@ -99,6 +108,8 @@ def api(monkeypatch):
             if state.get("history_error"):
                 return httpx.Response(400, json={"code": state["history_error"]})
             rows = state.get("bookings", [])
+            if request.url.params.get("deleted_at") == "is.null":
+                rows = [row for row in rows if not row.get("deleted_at")]
             if 'rental_kind' in request.url.params:
                 assert request.url.params['rental_kind']=='eq.seasonal'
                 rows=[row for row in rows if row.get('rental_kind')=='seasonal' and request.url.params['season_id']==f"eq.{row.get('season_id')}"]
@@ -2006,3 +2017,30 @@ def test_booking_lists_expose_formula_from_saved_pack_rows(api,kind,formula):
     response=client.get(path,headers=HEADERS)
     assert response.status_code==200
     assert response.json()[0]['rental_formula']==('pack' if formula=='poles_pack' else formula)
+
+
+@pytest.mark.parametrize('kind',['daily','seasonal'])
+def test_delete_booking_hides_it_from_lists_details_and_customer_bookings(api,kind):
+    client,state=api
+    header={**history_header(),'rental_kind':kind,'season_id':USER_ID if kind=='seasonal' else None}
+    state['bookings']=[header]
+    state['history_items'],state['history_payments']=history_children(header['id'])
+    path=f"/api/v1/locations/{LOCATION_A}/rental-bookings/{header['id']}"
+    assert client.delete(path,headers=HEADERS).status_code==204
+    assert client.delete(path,headers=HEADERS).status_code==204
+    assert state['delete_booking_payload']=={'p_location_id':LOCATION_A,'p_booking_id':header['id']}
+    assert client.get(path,headers=HEADERS).status_code==404
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/rental-bookings?scope=all',headers=HEADERS).json()==[]
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/seasonal-bookings?season_id={USER_ID}',headers=HEADERS).json()==[]
+    assert len(state['history_items'])==2 and len(state['history_payments'])==2
+
+
+@pytest.mark.parametrize('code,status',[('42501',403),('P0002',404),('PGRST202',503),('P0001',409)])
+def test_delete_booking_errors_and_authorization(api,code,status):
+    client,state=api
+    path=f'/api/v1/locations/{LOCATION_A}/rental-bookings/{USER_ID}'
+    assert client.delete(path).status_code==401
+    assert client.delete(f'/api/v1/locations/{UNASSIGNED_LOCATION}/rental-bookings/{USER_ID}',headers=HEADERS).status_code==403
+    assert 'delete_booking_payload' not in state
+    state['delete_booking_error']=code
+    assert client.delete(path,headers=HEADERS).status_code==status

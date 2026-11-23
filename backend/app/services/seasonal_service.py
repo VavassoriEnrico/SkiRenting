@@ -18,7 +18,7 @@ def seasonal_error(error: httpx.HTTPError):
             body={}
         code=body.get('code') if isinstance(body,dict) else None
         if code in ('PGRST205','PGRST202','42P01','42703','PGRST204'):
-            return HTTPException(503,'Esegui 023_seasonal_rentals.sql in Supabase per configurare gli stagionali.')
+            return HTTPException(503,'Verifica 023_seasonal_rentals.sql e 029_delete_rental_bookings.sql in Supabase.')
         if code=='42501': return HTTPException(403,'Operazione stagionale non autorizzata.')
         if code=='23505': return HTTPException(409,'Esiste già una stagione con questo nome.')
         if code=='P0002': return HTTPException(404,'Stagione o tariffa non trovata.')
@@ -63,7 +63,7 @@ def list_bookings(client: httpx.Client, user_id: UUID, location_id: UUID, season
     try:
         headers=read_all(client,'rental_bookings',{
             'select':rental_history_repository.HEADER_FIELDS,'location_id':f'eq.{location_id}',
-            'rental_kind':'eq.seasonal','season_id':f'eq.{season_id}','order':'starts_on.desc,booking_number.desc,id',
+            'rental_kind':'eq.seasonal','season_id':f'eq.{season_id}','deleted_at':'is.null','order':'starts_on.desc,booking_number.desc,id',
         })
         items,payments=rental_history_repository.get_children(client,headers)
         return enrich(headers,items,payments,details=False)

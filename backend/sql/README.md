@@ -617,3 +617,19 @@ Una tariffa pack mancante blocca la conferma senza scritture parziali. Sconti
 albergo/promozioni, acconti, disponibilità e idempotenza mantengono le regole
 esistenti. I noleggi salvati conservano prezzi e abbinamenti storici. La query è
 ripetibile e non modifica le tariffe stagionali.
+
+## 029 — Eliminazione delle prenotazioni
+
+Eseguire [029_delete_rental_bookings.sql](029_delete_rental_bookings.sql) dopo
+028. Aggiunge deleted_at/deleted_by a rental_bookings e una RPC autorizzata per
+sede. Rimozione disponibile per noleggi attuali e storici, giornalieri e
+stagionali. Conserva righe materiali, pagamenti e richieste di rientro, senza
+inventare riconsegne. L'API esclude la prenotazione dagli elenchi, dai dettagli,
+dalla scheda cliente e dai conteggi di utilizzo del materiale.
+
+Le assegnazioni della prenotazione eliminata vengono liberate: conferme,
+disponibilità, trasferimenti e riparazioni ignorano le prenotazioni rimosse.
+Gli articoli con stato manutenzione/perso/venduto mantengono i propri vincoli.
+La RPC blocca gli esemplari in ordine e la prenotazione durante la rimozione;
+pagamenti e rientri successivi vengono rifiutati. Eliminare nuovamente la stessa
+prenotazione è idempotente. La query è ripetibile e non elimina dati esistenti.

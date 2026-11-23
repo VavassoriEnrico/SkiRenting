@@ -19,7 +19,7 @@ PAYMENT_FIELDS = 'id,booking_id,payment_method,amount,paid_at,created_by,notes,c
 
 
 def get_headers(client: httpx.Client, location_id: UUID, history_only: bool, booking_id: UUID | None = None):
-    params = {'select': HEADER_FIELDS, 'location_id': f'eq.{location_id}',
+    params = {'select': HEADER_FIELDS, 'location_id': f'eq.{location_id}', 'deleted_at': 'is.null',
               'order': 'starts_on.desc,booking_number.desc,id'}
     if history_only:
         params['status'] = 'in.(completed,cancelled)'
@@ -47,7 +47,7 @@ def get_children(client: httpx.Client, headers: list[dict]) -> tuple[list[dict],
 
 def get_due_headers(client: httpx.Client, location_id: UUID, due_on: date) -> list[dict]:
     return read_all(client, 'rental_bookings', {
-        'select': HEADER_FIELDS, 'location_id': f'eq.{location_id}',
+        'select': HEADER_FIELDS, 'location_id': f'eq.{location_id}', 'deleted_at': 'is.null',
         'ends_on': f'eq.{due_on.isoformat()}', 'status': 'in.(confirmed,preparing,active,completed)',
         'order': 'booking_number,id',
     })
@@ -71,7 +71,14 @@ def get_customer_headers(client: httpx.Client, customer_id: UUID, location_ids: 
     for start in range(0, len(location_ids), 100):
         identifiers = ','.join(location_ids[start:start + 100])
         headers.extend(read_all(client, 'rental_bookings', {
-            'select': HEADER_FIELDS, 'customer_id': f'eq.{customer_id}',
+            'select': HEADER_FIELDS, 'customer_id': f'eq.{customer_id}', 'deleted_at': 'is.null',
             'location_id': f'in.({identifiers})', 'order': 'starts_on.desc,ends_on.desc,booking_number.desc,id',
         }))
     return sorted(headers, key=lambda row: (row['starts_on'],row['ends_on'],row['booking_number'],row['id']), reverse=True)
+
+
+def delete_booking(client: httpx.Client, location_id: UUID, booking_id: UUID):
+    response = client.post('/rest/v1/rpc/skirenting_delete_rental_booking', json={
+        'p_location_id': str(location_id), 'p_booking_id': str(booking_id),
+    })
+    response.raise_for_status()

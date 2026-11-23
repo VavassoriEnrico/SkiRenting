@@ -21,6 +21,7 @@ def get_item_details(client: httpx.Client, user_id: UUID, location_id: UUID, ite
         # all'operatore anche dopo un trasferimento. RLS continua ad applicarsi.
         rentals = read_all(client, 'rental_booking_items', {
             'select': 'id,booking_id,delivered_at,booking:rental_bookings!inner(status,starts_on,created_at)',
+            'booking.deleted_at': 'is.null',
             'rental_inventory_id': f'eq.{item_id}',
             'booking.status': 'in.(confirmed,preparing,active,completed)',
             'booking.starts_on': f'lte.{now.date().isoformat()}',

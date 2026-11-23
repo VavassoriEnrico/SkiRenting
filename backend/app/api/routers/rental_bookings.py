@@ -1,15 +1,21 @@
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app.api.routers.operator import CurrentUserId, SupabaseClient
 from app.schemas.rental_booking import RentalBookingCreate, RentalBookingRead, RentalPaymentCreate
 from app.services.rental_booking_service import confirm_booking, register_payment
 from app.schemas.rental_history import HistoryBookingDetails, HistoryBookingRead, TodayReturnsRead, RentalReturnCreate
-from app.services.rental_history_service import read_history, read_today_returns, register_return
+from app.services.rental_history_service import read_history, read_today_returns, register_return, delete_booking
 
 router = APIRouter(prefix='/locations', tags=['rental-bookings'])
+
+
+@router.delete('/{location_id}/rental-bookings/{booking_id}', status_code=204)
+def remove_booking(location_id: UUID, booking_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
+    delete_booking(client, user_id, location_id, booking_id)
+    return Response(status_code=204)
 
 
 @router.post('/{location_id}/rental-bookings/{booking_id}/payments', response_model=HistoryBookingDetails)

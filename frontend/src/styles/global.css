@@ -664,3 +664,6 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .seasonal-categories, .seasonal-list-selector { margin-top: 24px; margin-bottom: 24px; }
 .seasonal-settings .rentals-panel-heading h2, .seasonal-categories h2 { color: #7c3aed; }
 .seasonal-settings input, .seasonal-list-selector select { border-color: #7c3aed; }
+
+.history-bookings-table .rental-actions-cell { position: sticky; right: 0; background: #fff; z-index: 1; min-width: 92px; box-shadow: -5px 0 10px -10px #64748b; }
+.history-bookings-table thead .rental-actions-cell { background: #f0f1fa; z-index: 2; }

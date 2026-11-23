@@ -64,7 +64,8 @@ def confirmation_database():
                              '025_generic_poles.sql', '025_generic_poles.sql',
                              '026_generic_pole_quantities.sql', '026_generic_pole_quantities.sql',
                              '027_daily_pack_rates.sql', '027_daily_pack_rates.sql',
-                             '028_apply_daily_packs.sql', '028_apply_daily_packs.sql']:
+                             '028_apply_daily_packs.sql', '028_apply_daily_packs.sql',
+                             '029_delete_rental_bookings.sql', '029_delete_rental_bookings.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -1068,3 +1069,48 @@ def test_daily_mixed_ski_and_snowboard_packs_keep_boots_compatible_and_poles_wit
     assert next(row for row in rows if row[0]==selection['inventory_ids'][1])[1:]==(ids[0],0)
     assert next(row for row in rows if row[0]==snow_members[1])[1:]==(snow_members[0],0)
     assert sorted(row[2] for row in rows if row[0]==generic)==[0,5,5]
+
+
+@pytest.mark.parametrize('kind',['daily','seasonal'])
+@pytest.mark.parametrize('state',['confirmed','active','completed','cancelled'])
+def test_deleting_bookings_preserves_ledger_and_releases_assignments(setup,kind,state):
+    conn,ids,*_=setup
+    if kind=='daily':
+        data=payload(ids,payment={'amount':'10','payment_method':'Contanti','paid_at':'2026-11-23T10:00:00Z'})
+        first=confirm(conn,data)
+    else:
+        season,selection=seasonal_setup(conn,ids)
+        data={**selection,'customer_id':USER_A,'expected_return_date':season['return_date'],'expected_total':'150',
+              'payment':{'amount':'10','payment_method':'Contanti','paid_at':'2026-11-23T10:00:00Z'}}
+        first=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,str(uuid4()),Jsonb(data))).fetchone()[0]
+    conn.execute('reset role')
+    conn.execute('update rental_bookings set status=%s where id=%s',(state,first['id']))
+    conn.execute('set local role authenticated')
+    before=conn.execute('select count(*) from rental_booking_items where booking_id=%s',(first['id'],)).fetchone()[0]
+    for _ in range(2):
+        conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_A,first['id']))
+    assert conn.execute('select deleted_at is not null,deleted_by::text from rental_bookings where id=%s',(first['id'],)).fetchone()==(True,USER_A)
+    assert conn.execute('select count(*) from rental_booking_items where booking_id=%s and returned_at is null',(first['id'],)).fetchone()[0]==before
+    assert conn.execute('select sum(amount) from rental_payments where booking_id=%s',(first['id'],)).fetchone()[0]==10
+    assert confirm(conn,payload(ids))['total']==48
+    with pytest.raises(psycopg.errors.RaiseException,match='eliminata'),conn.transaction():
+        if kind=='daily': confirm(conn,data,first['id'])
+        else: conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,first['id'],Jsonb(data)))
+
+
+def test_delete_booking_rejects_foreign_site_and_protects_preserved_payments(setup):
+    conn,ids,*_=setup
+    booking=confirm(conn,payload(ids))
+    with pytest.raises(psycopg.errors.NoDataFound),conn.transaction():
+        conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_B,booking['id']))
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)",(USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_B,booking['id']))
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)",(USER_A,))
+    conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_A,booking['id']))
+    with pytest.raises(psycopg.errors.RaiseException,match='eliminata'),conn.transaction():
+        conn.execute('reset role')
+        conn.execute("insert into rental_payments(booking_id,payment_method,amount,created_by) values(%s,'Contanti',1,%s)",(booking['id'],USER_A))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('set local role anon')
+        conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_A,booking['id']))

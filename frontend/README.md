@@ -417,3 +417,10 @@ automaticamente: il riepilogo mostra Pack 1/2 e gli articoli inclusi vicini, con
 prezzo pack giornaliero sull'attrezzo e zero sugli scarponi. Anche lo storico
 conserva questi abbinamenti. Un prezzo pack mancante mantiene il totale non
 confermabile fino alla configurazione e al ricalcolo del listino.
+
+Le quattro pagine dei noleggi attuali/storici, giornalieri/stagionali, mostrano
+il cestino rosso a destra con lo stesso stile dei Clienti. Il dialogo richiede
+conferma e segnala che le assegnazioni saranno liberate. Dopo il successo la riga
+sparisce e i conteggi si aggiornano; in caso di errore la prenotazione resta
+visibile. Le richieste duplicate sono bloccate e quelle pendenti annullate
+all'uscita. Richiede `backend/sql/029_delete_rental_bookings.sql`.

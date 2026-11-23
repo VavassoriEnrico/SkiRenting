@@ -503,3 +503,10 @@ sola volta. Il prezzo pack dipende dal gruppo dell'attrezzo e dalla durata. Le
 righe salvano formula e riferimento al pack nei campi già disponibili; gli
 scarponi inclusi hanno prezzo zero, senza richiedere la loro tariffa singola.
 Gli sconti si applicano dopo il calcolo del subtotale completo.
+
+`DELETE /api/v1/locations/{location_id}/rental-bookings/{booking_id}` restituisce
+204 dopo la rimozione logica autorizzata per sede (query 029). Vale per
+giornalieri/stagionali e attuali/storici; chiamate ripetute sono idempotenti.
+Gli elenchi e i dettagli applicano deleted_at is null, inclusa la scheda cliente.
+Le righe contabili e di rientro sono conservate ma non sono più modificabili;
+le assegnazioni sono liberate senza segnare gli articoli come riconsegnati.

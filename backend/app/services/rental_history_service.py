@@ -59,11 +59,34 @@ def history_error(error: httpx.HTTPError) -> HTTPException:
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('42703', 'PGRST204'):
-            return HTTPException(503, 'Verifica 015_customer_profile_fields.sql , 021_apply_rental_promotions.sql e 023_seasonal_rentals.sql in Supabase.')
+            return HTTPException(503, 'Verifica 015, 021, 023 e 029_delete_rental_bookings.sql in Supabase.')
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01'):
             return HTTPException(503, 'Tabelle noleggio non disponibili. Verificare la query 007.')
         return HTTPException(503, 'Impossibile caricare i noleggi da Supabase.')
     return HTTPException(503, 'Impossibile raggiungere Supabase per caricare i noleggi.')
+
+
+def delete_booking(client: httpx.Client, user_id: UUID, location_id: UUID, booking_id: UUID):
+    get_authorized_location(client, user_id, location_id)
+    try:
+        rental_history_repository.delete_booking(client, location_id, booking_id)
+    except httpx.HTTPStatusError as error:
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code') if isinstance(body, dict) else None
+        if code in ('PGRST202', '42703', '42P01'):
+            raise HTTPException(503, 'Esegui 029_delete_rental_bookings.sql in Supabase.') from error
+        if code == '42501':
+            raise HTTPException(403, 'Non sei autorizzato a eliminare noleggi in questa sede.') from error
+        if code == 'P0002':
+            raise HTTPException(404, 'Prenotazione non trovata in questa sede.') from error
+        if code == 'P0001':
+            raise HTTPException(409, body.get('message', 'La prenotazione è cambiata. Aggiorna l’elenco.')) from error
+        raise HTTPException(503, 'Eliminazione non riuscita. Verifica lo storico prima di riprovare.') from error
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Connessione interrotta. Verifica lo storico prima di riprovare.') from error
 
 
 def current_return_date():

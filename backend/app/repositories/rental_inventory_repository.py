@@ -83,6 +83,7 @@ def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: dat
         identifiers = ','.join(str(item['id']) for item in items[start:start + 100])
         rows = read_all(client, 'rental_booking_items', {
             'select': 'id,rental_inventory_id,delivered_at,booking:rental_bookings!inner(status,starts_on,ends_on)',
+            'booking.deleted_at': 'is.null',
             'rental_inventory_id': f'in.({identifiers})', 'returned_at': 'is.null', 'order': 'id',
         })
         for row in rows:

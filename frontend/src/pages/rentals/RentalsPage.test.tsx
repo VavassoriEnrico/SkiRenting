@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RentalsPage } from './RentalsPage';
 import type { HistoryBooking, HistoryDetails } from './rental-history';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' }, operator: { profile: { id: 'operator', name: 'Banco' } } } }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete:vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' }, operator: { profile: { id: 'operator', name: 'Banco' } } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
-vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post }));
+vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post,apiDelete:mocks.delete }));
 const booking: HistoryBooking = {
   id: 'booking-one', booking_number: 125, customer_id: 'customer', location_id: 'site-a',
   customer: { id: 'customer', first_name: 'Mario', last_name: 'Rossi', email: 'mario@example.test', phone: '+39 333-001234', notes: 'Nota cliente' },
@@ -21,6 +21,7 @@ const detail: HistoryDetails = { ...booking,
 };
 beforeEach(() => {
   mocks.post.mockReset();
+  mocks.delete.mockReset();
   mocks.auth.location = { id: 'site-a', name: 'Madesimo' };
   mocks.get.mockReset().mockImplementation((path: string) => Promise.resolve(path.endsWith('scope=all') ? [booking, second] : detail));
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); });
@@ -222,4 +223,44 @@ it.each([
   await screen.findByText('Mario Rossi');
   expect(screen.getByRole('columnheader',{name:'Formula'})).toBeTruthy();
   expect(screen.getByRole('cell',{name:label})).toBeTruthy();
+});
+
+
+it.each(['daily','seasonal'] as const)('deletes current and historical %s bookings only after confirmation',async(kind)=>{
+  mocks.get.mockResolvedValue([{...booking,rental_kind:kind},{...second,rental_kind:kind}]);
+  mocks.delete.mockResolvedValue(undefined);
+  const page=render(<RentalsPage view="current" seasonId={kind==='seasonal'?'season':undefined}/>);
+  await screen.findByText('Mario Rossi');
+  fireEvent.click(screen.getByRole('button',{name:'Elimina prenotazione 125'}));
+  expect(mocks.delete).not.toHaveBeenCalled();
+  expect(screen.queryByRole('heading',{name:'Dettaglio noleggio'})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Annulla'}));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Elimina prenotazione 125'}));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Elimina prenotazione'}));
+  await screen.findByText('Prenotazione eliminata.');
+  expect(screen.queryByText('Mario Rossi')).toBeNull();
+  expect(mocks.delete).toHaveBeenCalledWith('/locations/site-a/rental-bookings/booking-one','token',expect.any(AbortSignal));
+  page.rerender(<RentalsPage view="history" seasonId={kind==='seasonal'?'season':undefined}/>);
+  await screen.findByText('Anna Bianchi');
+  fireEvent.click(screen.getByRole('button',{name:'Elimina prenotazione 126'}));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Elimina prenotazione'}));
+  await screen.findByText('Prenotazione eliminata.');
+  expect(screen.queryByText('Anna Bianchi')).toBeNull();
+});
+
+it('keeps the booking on deletion errors and blocks duplicate submissions',async()=>{
+  let fail!:(reason:Error)=>void;
+  mocks.delete.mockImplementation(()=>new Promise((_,reject)=>{fail=reject;}));
+  render(<RentalsPage view="current"/>);
+  await screen.findByText('Mario Rossi');
+  fireEvent.click(screen.getByRole('button',{name:'Elimina prenotazione 125'}));
+  const submit=within(screen.getByRole('dialog')).getByRole('button',{name:'Elimina prenotazione'});
+  fireEvent.click(submit);fireEvent.click(submit);
+  expect(mocks.delete).toHaveBeenCalledTimes(1);
+  await act(async()=>fail(new Error('Esegui 029')));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent','Esegui 029');
+  expect(within(screen.getByRole('region',{name:'Elenco noleggi della sede'})).getByText('Mario Rossi')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Annulla'}));
+  expect(within(screen.getByRole('region',{name:'Elenco noleggi della sede'})).getByText('Mario Rossi')).toBeTruthy();
 });
