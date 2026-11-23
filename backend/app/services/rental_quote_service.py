@@ -4,12 +4,13 @@ from uuid import UUID
 import httpx
 from fastapi import HTTPException
 
-from app.repositories import rental_quote_repository
+from app.repositories import rental_quote_repository, promotion_repository
+from app.services.promotion_service import best_promotion_for_day
 from app.schemas.rental_quote import QuoteItem, RentalQuoteRead, RentalQuoteRequest
 from app.services.operator_service import get_authorized_location
 
 
-def calculate_quote(data: RentalQuoteRequest, items: list[dict], rates: list[dict], hotel: dict | None):
+def calculate_quote(data: RentalQuoteRequest, items: list[dict], rates: list[dict], hotel: dict | None, promotions: list[dict] | None = None):
     # Date, non ore: inclusivo e indipendente dai cambi di ora legale.
     days = (data.ends_on - data.starts_on).days + 1
     column = 'daily_price_1_day' if days == 1 else (
@@ -32,12 +33,18 @@ def calculate_quote(data: RentalQuoteRequest, items: list[dict], rates: list[dic
             daily_price=price, amount=amount,
         ))
     percent = Decimal(str(hotel['discount'])) if hotel else Decimal('0')
+    promotion = best_promotion_for_day(promotions or [], data.starts_on) if days == 1 else None
+    # A parità di percentuale resta lo sconto albergo, senza cumulo.
+    if promotion and Decimal(str(promotion['discount_percent'])) > percent:
+        percent = Decimal(str(promotion['discount_percent']))
+    else:
+        promotion = None
     subtotal = sum((line.amount for line in lines), Decimal('0')) if not missing else None
     total = (subtotal * (100 - percent) / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if subtotal is not None else None
     discount = subtotal - total if subtotal is not None else None
     return RentalQuoteRead(
         starts_on=data.starts_on, ends_on=data.ends_on, days=days, items=lines,
-        hotel=hotel, discount_percent=percent, subtotal=subtotal,
+        hotel=hotel, promotion=promotion, discount_percent=percent, subtotal=subtotal,
         discount_amount=discount, total=total, missing_rate_codes=missing,
     )
 
@@ -56,14 +63,15 @@ def get_quote(client: httpx.Client, user_id: UUID, location_id: UUID, data: Rent
             raise HTTPException(409, 'L’albergo selezionato non è più attivo. Seleziona un altro albergo.')
         groups = sorted({str(item['group']['id']) for item in items})
         rates = rental_quote_repository.get_rates(client, groups)
-        return calculate_quote(data, items, rates, hotel)
+        promotions = promotion_repository.list_promotions(client) if data.starts_on == data.ends_on else []
+        return calculate_quote(data, items, rates, hotel, promotions)
     except httpx.HTTPStatusError as error:
         try:
             body = error.response.json()
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01', '42703', 'PGRST204'):
-            raise HTTPException(503, 'Verifica le query 009 (sconto alberghi) e 010 (tariffe) in Supabase.') from error
+            raise HTTPException(503, 'Verifica le query 009 (sconto alberghi), 010 (tariffe) e 020 (promozioni) in Supabase.') from error
         raise HTTPException(503, 'Impossibile calcolare i prezzi. Riprova.') from error
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Impossibile raggiungere Supabase per calcolare i prezzi.') from error

@@ -10,6 +10,7 @@ import { RentalSection } from './RentalSection';
 export type RentalQuote = {
   starts_on: string; ends_on: string; days: number;
   items: { inventory_id: string; code: string; brand: string; model: string; group_name: string; daily_price: string | null; amount: string | null }[];
+  promotion?: { id: string; name: string } | null;
   hotel: { id: string; name: string } | null;
   discount_percent: string; subtotal: string | null; discount_amount: string | null; total: string | null;
   missing_rate_codes: string[];
@@ -60,7 +61,7 @@ export function RentalRecapSection({ token, locationId, customer, period, equipm
               <div className="rentals-table-scroll" role="region" aria-label="Prezzi del noleggio" tabIndex={0}><table className="rentals-table rental-recap-table"><caption className="sr-only">Prezzi del materiale per il periodo selezionato</caption><thead><tr><th scope="col">Codice</th><th scope="col">Materiale</th><th scope="col">Gruppo</th><th scope="col">Misura</th><th scope="col">€/giorno</th><th scope="col">Giorni</th><th scope="col">Totale articolo</th></tr></thead><tbody>
                 {quote.items.map((item) => <tr key={item.inventory_id}><th scope="row" className="unit-code">{item.code}</th><td>{item.brand} {item.model}</td><td>{item.group_name}</td><td>{equipment.find((entry) => entry.id === item.inventory_id) ? sizeLabel(equipment.find((entry) => entry.id === item.inventory_id)!.variant) : '—'}</td><td>{item.daily_price === null ? 'Tariffa mancante' : money(item.daily_price)}</td><td>{quote.days}</td><td>{item.amount === null ? 'Da configurare' : money(item.amount)}</td></tr>)}
               </tbody></table></div>
-              <dl className="rental-recap-totals"><div><dt>Subtotale</dt><dd>{money(quote.subtotal)}</dd></div><div><dt>Sconto albergo ({Number(quote.discount_percent).toLocaleString('it-IT')}%)</dt><dd>{quote.discount_amount === null ? 'Da completare' : `− ${money(quote.discount_amount)}`}</dd></div><div className="rental-recap-total"><dt>Totale noleggio</dt><dd>{money(quote.total)}</dd></div></dl>
+              <dl className="rental-recap-totals"><div><dt>Subtotale</dt><dd>{money(quote.subtotal)}</dd></div><div><dt>{quote.promotion ? `Promozione ${quote.promotion.name}` : quote.hotel ? 'Sconto albergo' : 'Sconto'} ({Number(quote.discount_percent).toLocaleString('it-IT')}%)</dt><dd>{quote.discount_amount === null ? 'Da completare' : `− ${money(quote.discount_amount)}`}</dd></div><div className="rental-recap-total"><dt>Totale noleggio</dt><dd>{money(quote.total)}</dd></div></dl>
               <button className="sales-button" type="button" onClick={() => setAttempt((current) => current + 1)}>Aggiorna prezzi</button>
               <p className="rental-form-hint rental-equipment-availability">Questo riepilogo non conferma la prenotazione e non riserva gli articoli.</p>
             </>}

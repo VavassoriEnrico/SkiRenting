@@ -89,10 +89,12 @@ class RentalInventoryRead(BaseModel):
 
 
 class GeneralRentalItemRead(RentalItemRead):
+    is_currently_rented: bool
     location: LocationRead
 
 
 class GeneralRentalInventoryRead(BaseModel):
+    summary: RentalInventorySummary
     categories: list[CategoryRead]
     locations: list[LocationRead]
     items: list[GeneralRentalItemRead]

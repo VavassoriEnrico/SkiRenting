@@ -465,3 +465,39 @@ Rimosso `material_variants.notes` da schema, API, schede e modulo nuovo articolo
 Le note degli esemplari, giacenze vendita, riparazioni e prenotazioni restano.
 Dopo aver rimosso la colonna, rieseguire **005_create_rental_item.sql** aggiornata:
 la funzione esistente cercava `v.notes` e inseriva `material_variants.notes`.
+
+## 020 — Promozioni
+
+Eseguire tutta [020_promotions.sql](020_promotions.sql) nel SQL Editor del progetto,
+dopo la configurazione operatori/sedi della query 001. È ripetibile senza eliminare
+promozioni. Crea `public.promotions` con:
+
+| Colonna | Contenuto |
+| --- | --- |
+| `id` | UUID generato dal database |
+| `created_at` | Data/ora di creazione generata dal database |
+| `name` | Nome obbligatorio, massimo 200 caratteri |
+| `promotion_date` | Data singola, altrimenti null |
+| `weekdays` | Giorni ricorrenti da 1=lunedì a 7=domenica; vuoto per data singola |
+| `discount_percent` | Percentuale da 0 a 100, fino a due decimali |
+| `is_active` | Rimozione logica, senza cancellazione del record |
+
+Data e giorni settimanali sono alternativi. Giorni fuori intervallo, duplicati e
+null vengono rifiutati. Le promozioni sono condivise tra sedi; solo operatori con
+profilo e almeno una sede assegnata possono leggerle e gestirle. Gli operatori
+possono inserire nome/periodo/percentuale e aggiornare solo is_active; ID e data
+sono generati dal database e non c'è DELETE diretto. Non applica promozioni ai
+noleggi né definisce cumulabilità o priorità rispetto ad alberghi o altre promozioni.
+
+
+## 021 — Applicazione promozioni ai noleggi
+
+Eseguire tutta [021_apply_rental_promotions.sql](021_apply_rental_promotions.sql)
+dopo 020 e la conferma 012. Aggiunge promotion_id e promotion_name alle prenotazioni
+come riferimenti/snapshot e aggiorna la funzione di conferma. Nessun ricalcolo dei
+noleggi già salvati. Una promozione vale solo per noleggi di un giorno, se la data
+coincide o il giorno della settimana è incluso. Si usa il massimo tra promozioni e
+sconto albergo, senza cumulo. Nei noleggi di più giorni le promozioni non valgono,
+ma lo sconto albergo rimane disponibile. Lo sconto scelto è salvato in discount_percent.
+La funzione resta idempotente e verifica il preventivo prima di salvare; applicando
+di nuovo la vecchia 012 è necessario rieseguire anche 021.

@@ -55,7 +55,9 @@ def confirmation_database():
                              '013_register_rental_return.sql', '014_register_rental_payment.sql', '015_customer_profile_fields.sql', '016_legacy_customer_import.sql',
                              '017_customer_management.sql', '017_customer_management.sql',
                              '018_material_repairs.sql', '018_material_repairs.sql',
-                             '019_material_repairs_workflow.sql', '019_material_repairs_workflow.sql']:
+                             '019_material_repairs_workflow.sql', '019_material_repairs_workflow.sql',
+                             '020_promotions.sql', '020_promotions.sql',
+                             '021_apply_rental_promotions.sql', '021_apply_rental_promotions.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -571,3 +573,76 @@ def test_repair_and_current_rental_cannot_both_claim_an_item(confirmation_databa
         owner.execute('delete from rental_booking_items where booking_id=%s',(booking_id,))
         owner.execute('delete from rental_bookings where id=%s',(booking_id,))
         owner.execute("update rental_inventory set status='active' where id=%s",(ids[0],))
+
+
+@pytest.mark.parametrize('promotion_date,weekdays,discount',[
+    (None,[],10), ('2026-12-25',[2],10), (None,[0],10), (None,[8],10),
+    (None,[2,2],10), (None,[None],10), ('2026-12-25',[],101), ('2026-12-25',[],-1),
+])
+def test_promotions_sql_rejects_invalid_schedule_and_discount(setup,promotion_date,weekdays,discount):
+    conn,*_=setup
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute("insert into promotions(name,promotion_date,weekdays,discount_percent) values('Promo test',%s,%s,%s)",(promotion_date,weekdays,discount))
+
+
+def test_promotions_sql_shared_access_and_soft_remove(setup):
+    conn,*_=setup
+    row=conn.execute("insert into promotions(name,promotion_date,discount_percent) values('Natale','2026-12-25',15.5) returning id,created_at,weekdays,is_active").fetchone()
+    assert row[1] is not None and row[2] == [] and row[3]
+    weekly=conn.execute("insert into promotions(name,weekdays,discount_percent) values('Settimanale',array[2,4]::smallint[],10) returning id").fetchone()[0]
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)",(USER_B,))
+    assert conn.execute('select discount_percent from promotions where id=%s',(weekly,)).fetchone()[0] == 10
+    conn.execute('update promotions set is_active=false where id=%s',(weekly,))
+    assert conn.execute('select is_active from promotions where id=%s',(weekly,)).fetchone() == (False,)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('delete from promotions where id=%s',(weekly,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('update promotions set created_at=now() where id=%s',(weekly,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('set local role anon')
+        conn.execute('select * from promotions')
+    # Profilo esistente ma nessuna sede assegnata: lettura vuota e inserimento negato.
+    conn.execute('reset role')
+    conn.execute('delete from operator_locations where operator_id=%s',(USER_B,))
+    conn.execute('set local role authenticated')
+    assert conn.execute('select count(*) from promotions').fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute("insert into promotions(name,weekdays,discount_percent) values('Settimanale',array[2]::smallint[],10)")
+
+
+@pytest.mark.parametrize('days,hotel_discount,promotions,expected,winning_name',[
+    (1,0,[(None,[2],10,'Martedì'),('2026-12-01',[],25,'Giornata')],'15.00','Giornata'),
+    (1,30,[('2026-12-01',[],25,'Giornata')],'14.00',None),
+    (1,15,[('2026-12-01',[],15,'Pari')],'17.00',None),
+    (1,0,[('2026-12-02',[],90,'Domani'),(None,[4],80,'Giovedì')],'20.00',None),
+    (3,15,[('2026-12-01',[],90,'Solo un giorno'),(None,[2],80,'Martedì')],'40.80',None),
+    (1,0,[('2026-12-01',[],100,'Gratis')],'0.00','Gratis'),
+])
+def test_confirm_uses_only_highest_discount_for_single_day(setup,days,hotel_discount,promotions,expected,winning_name):
+    conn,ids,hotel,_=setup
+    # Test owner configures the hotel, then the operator creates promotions.
+    conn.execute('reset role')
+    conn.execute('update hotels set discount=%s where id=%s',(hotel_discount,hotel))
+    conn.execute('set local role authenticated')
+    for day,weekdays,percent,name in promotions:
+        conn.execute('insert into promotions(name,promotion_date,weekdays,discount_percent) values(%s,%s,%s,%s)',(name,day,weekdays,percent))
+    data=payload(ids,starts_on='2026-12-01',ends_on=f'2026-12-0{days}',hotel_id=hotel,expected_total=expected)
+    booking_id=str(uuid4())
+    result=confirm(conn,data,booking_id)
+    assert Decimal(str(result['total'])) == Decimal(expected)
+    row=conn.execute('select promotion_name,discount_percent from rental_bookings where id=%s',(booking_id,)).fetchone()
+    assert row[0] == winning_name
+    assert row[1] == (100-Decimal(expected)/(20 if days==1 else 48)*100)
+    # Idempotent retry does not recalculate after changing the promotion configuration.
+    conn.execute('update promotions set is_active=false')
+    assert Decimal(str(confirm(conn,data,booking_id)['total'])) == Decimal(expected)
+    assert conn.execute('select promotion_name from rental_bookings where id=%s',(booking_id,)).fetchone()[0] == winning_name
+
+
+def test_confirmation_rejects_stale_promotion_total_without_saving(setup):
+    conn,ids,*_=setup
+    conn.execute("insert into promotions(name,promotion_date,discount_percent) values('Giornata','2026-12-01',25)")
+    booking_id=str(uuid4())
+    with pytest.raises(psycopg.errors.RaiseException,match='Listino o sconto cambiati'),conn.transaction():
+        confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',expected_total='20'),booking_id)
+    assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0] == 0

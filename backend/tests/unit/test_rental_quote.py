@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 
@@ -62,3 +63,32 @@ def test_invalid_period_and_duplicate_items_are_rejected():
         RentalQuoteRequest(starts_on='2026-12-02', ends_on='2026-12-01', inventory_ids=[ITEM_ID])
     with pytest.raises(ValueError):
         RentalQuoteRequest(starts_on='2026-12-01', ends_on='2026-12-02', inventory_ids=[ITEM_ID, ITEM_ID])
+
+
+@pytest.mark.parametrize('end,hotel_discount,promotions,expected,promotion_name',[
+    ('2026-12-01',0,[(None,[2],10,'Martedì'),('2026-12-01',[],25,'Giornata')],'15.00','Giornata'),
+    ('2026-12-01',30,[('2026-12-01',[],25,'Giornata')],'14.00',None),
+    ('2026-12-01',15,[('2026-12-01',[],15,'Pari')],'17.00',None),
+    ('2026-12-01',0,[('2026-12-02',[],90,'Domani'),(None,[4],80,'Giovedì')],'20.00',None),
+    ('2026-12-03',15,[('2026-12-01',[],90,'Solo un giorno'),(None,[2],80,'Martedì')],'40.80',None),
+    ('2026-12-01',0,[('2026-12-01',[],100,'Gratis')],'0.00','Gratis'),
+])
+def test_quote_uses_only_best_discount_and_promotions_only_for_one_day(end,hotel_discount,promotions,expected,promotion_name):
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on=end,inventory_ids=[ITEM_ID])
+    hotel={'id':GROUP_ID,'name':'Albergo','discount':hotel_discount}
+    promos=[{'id':str(UUID(int=i+1)),'name':name,'promotion_date':day,'weekdays':weekdays,'discount_percent':percentage,'is_active':True}
+            for i,(day,weekdays,percentage,name) in enumerate(promotions)]
+    result=calculate_quote(data,[ITEM],[RATE],hotel,promos)
+    assert result.total == Decimal(expected)
+    assert (result.promotion.name if result.promotion else None) == promotion_name
+    assert result.subtotal == result.total+result.discount_amount
+
+
+def test_quote_ignores_removed_promotions_and_resolves_ties_consistently():
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[ITEM_ID])
+    base={'id':ITEM_ID,'name':'Prima','promotion_date':None,'weekdays':[2],'discount_percent':25,'is_active':True}
+    second={**base,'id':GROUP_ID,'name':'Seconda'}
+    inactive={**base,'id':'30000000-0000-0000-0000-000000000001','is_active':False,'discount_percent':100}
+    result=calculate_quote(data,[ITEM],[RATE],None,[inactive,second,base])
+    assert result.total == Decimal('15.00')
+    assert str(result.promotion.id) == ITEM_ID

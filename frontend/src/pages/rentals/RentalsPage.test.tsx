@@ -166,3 +166,26 @@ describe('Storico reale di tutti i noleggi', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
+
+
+it('separates current rentals from history, including all-returned unpaid bookings in history', async () => {
+  const unpaid={...booking,id:'unpaid',booking_number:127,returned_item_count:1,customer:{...booking.customer,first_name:'Luca',last_name:'Verdi'}};
+  const cancelled={...booking,id:'cancelled',booking_number:128,status:'cancelled',customer:{...booking.customer,first_name:'Paolo',last_name:'Neri'}};
+  mocks.get.mockResolvedValue([booking,second,unpaid,cancelled]);
+  const view=render(<RentalsPage view="current" />);
+  await screen.findByText('Mario Rossi');
+  expect(screen.getByRole('heading',{name:'Noleggi attuali'})).toBeTruthy();
+  expect(screen.queryByText('Anna Bianchi')).toBeNull();
+  expect(screen.queryByText('Luca Verdi')).toBeNull();
+  expect(screen.queryByText('Paolo Neri')).toBeNull();
+  expect(within(screen.getByLabelText('Stato noleggio')).queryByRole('option',{name:'Concluso'})).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'nessun cliente'}});
+  view.rerender(<RentalsPage view="history" />);
+  await screen.findByText('Anna Bianchi');
+  expect(screen.getByText('Luca Verdi')).toBeTruthy();
+  expect(screen.getByText('Paolo Neri')).toBeTruthy();
+  expect(screen.queryByText('Mario Rossi')).toBeNull();
+  expect(screen.getByRole('heading',{name:'Storico noleggi'})).toBeTruthy();
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+  expect(within(screen.getByLabelText('Stato noleggio')).queryByRole('option',{name:'Prenotato'})).toBeNull();
+});

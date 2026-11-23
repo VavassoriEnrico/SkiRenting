@@ -162,6 +162,28 @@ def api(monkeypatch):
                 assert "!inner" in request.url.params["select"]
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=rates[offset:offset + 300])
+        if request.url.path == '/rest/v1/promotions':
+            assert request.url.params['select'] == 'id,name,created_at,promotion_date,weekdays,discount_percent,is_active'
+            if state.get('promotions_error'):
+                return httpx.Response(400,json={'code':state['promotions_error']})
+            rows=state.setdefault('promotions',[])
+            if request.method == 'POST':
+                assert request.headers['prefer'] == 'return=representation'
+                data=json.loads(request.content)
+                assert set(data) == {'name','promotion_date','weekdays','discount_percent'}
+                row={'id':str(UUID(int=20000+len(rows))),'created_at':'2026-11-23T10:00:00Z','is_active':True,**data}
+                rows.append(row)
+                return httpx.Response(201,json=[row])
+            assert request.url.params['is_active'] == 'eq.true'
+            matches=[row for row in rows if row['is_active']]
+            if request.method == 'PATCH':
+                assert json.loads(request.content) == {'is_active':False}
+                matches=[row for row in matches if request.url.params['id']==f"eq.{row['id']}"]
+                for row in matches: row['is_active']=False
+                return httpx.Response(200,json=matches)
+            assert request.method == 'GET'
+            offset=int(request.url.params['offset'])
+            return httpx.Response(200,json=matches[offset:offset+300])
         if request.url.path == "/rest/v1/hotels":
             assert request.url.params["select"] in ("id,name,is_active,discount", "id,name,discount")
             if state.get("hotel_error"):
@@ -1465,11 +1487,13 @@ def test_general_inventory_reads_every_authorized_site_and_unit_with_repairs(api
     assert response.status_code == 200
     body = response.json()
     assert len(body['items']) == 1305
+    assert body['summary'] == {'currently_rented':0,'currently_in_repair':1}
     assert len({item['id'] for item in body['items']}) == 1305
     assert {item['location']['name'] for item in body['items']} == {'Madesimo', 'Boscone'}
     assert {location['id'] for location in body['locations']} == {LOCATION_A, LOCATION_B}
     assert body['items'][0]['open_repair']['repair_type'] == 'wax'
     assert body['items'][1]['open_repair'] is None
+    assert all(not item['is_currently_rented'] for item in body['items'])
     requests = [r for r in state['requests'] if r.url.path.endswith('/rental_inventory')]
     assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
     assert all(r.method == 'GET' for r in state['requests'])
@@ -1660,3 +1684,135 @@ def test_unit_details_authorization_missing_item_and_errors(api):
     state['items']=[item]
     state['item_statistics_error']=True
     assert client.get(path,headers=HEADERS).status_code == 503
+
+
+def test_general_inventory_cards_aggregate_only_authorized_sites(api):
+    client,state=api
+    state['items']=[{**rental_item(i),'location':{'id':site,'name':name}} for i,(site,name) in enumerate([
+        (LOCATION_A,'Madesimo'),(LOCATION_B,'Boscone'),(UNASSIGNED_LOCATION,'Esclusa')])]
+    state['items'][1]['status']='maintenance'
+    state['repairs']=[{'id':USER_ID,'rental_inventory_id':state['items'][1]['id'],
+                      'repair_type':'wax','sent_at':'2026-11-22T10:00:00Z'}]
+    state['availability_items']=[{'id':str(i),'rental_inventory_id':item['id'],
+        'returned_at':None,'delivered_at':None,'booking':{'status':'active','starts_on':'2000-01-01','ends_on':'2000-01-02'}}
+        for i,item in enumerate(state['items'])]
+    state['availability_items'].append({**state['availability_items'][0],'id':'duplicate'})
+    response=client.get('/api/v1/rental-inventory',headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['summary'] == {'currently_rented':2,'currently_in_repair':1}
+    assert [item['is_currently_rented'] for item in response.json()['items']] == [True,True]
+    state['locations']=[LOCATION_A]
+    response=client.get('/api/v1/rental-inventory',headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()['items']) == 1
+    assert response.json()['summary'] == {'currently_rented':1,'currently_in_repair':0}
+
+
+@pytest.mark.parametrize('schedule',[
+    {'promotion_date':'2026-12-25','weekdays':[]},
+    {'promotion_date':None,'weekdays':[4,2]},
+])
+def test_promotions_create_list_and_soft_remove(api,schedule):
+    client,state=api
+    assert client.get('/api/v1/promotions',headers=HEADERS).json() == []
+    response=client.post('/api/v1/promotions',headers=HEADERS,json={**schedule,'name':'Promo test','discount_percent':15.5})
+    assert response.status_code == 201
+    row=response.json()
+    assert row['discount_percent'] == 15.5
+    assert row['weekdays'] == sorted(schedule['weekdays'])
+    assert row['promotion_date'] == schedule['promotion_date']
+    assert client.get('/api/v1/promotions',headers=HEADERS).json() == [row]
+    assert client.delete(f"/api/v1/promotions/{row['id']}",headers=HEADERS).status_code == 204
+    assert client.get('/api/v1/promotions',headers=HEADERS).json() == []
+    assert state['promotions'][0]['is_active'] is False
+    assert not any(r.method=='DELETE' for r in state['requests'])
+
+
+@pytest.mark.parametrize('data',[
+    {'promotion_date':None,'weekdays':[]},
+    {'promotion_date':'2026-12-25','weekdays':[2]},
+    {'weekdays':[0]}, {'weekdays':[8]}, {'weekdays':[2,2]}, {'weekdays':[None]}, {'weekdays':[True]},
+    {'promotion_date':'invalid'}, {'weekdays':[2],'discount_percent':101},
+    {'weekdays':[2],'discount_percent':-1}, {'weekdays':[2],'discount_percent':1.234},
+    {'weekdays':[2],'is_active':False},
+    {'weekdays':[2],'name':''}, {'weekdays':[2],'name':'   '}, {'weekdays':[2],'name':'a'*201},
+])
+def test_promotions_reject_invalid_schedule_or_percentage(api,data):
+    client,state=api
+    response=client.post('/api/v1/promotions',headers=HEADERS,json={'name':'Promo test','discount_percent':10,**data})
+    assert response.status_code == 422
+    assert not any(r.method=='POST' for r in state['requests'])
+
+
+def test_promotions_permissions_and_missing_migration(api):
+    client,state=api
+    assert client.get('/api/v1/promotions').status_code == 401
+    assert not state['requests']
+    state['profile']=None
+    assert client.get('/api/v1/promotions',headers=HEADERS).status_code == 403
+    assert not any(r.url.path.endswith('/promotions') for r in state['requests'])
+    state['profile']=PROFILE
+    state['promotions_error']='PGRST205'
+    response=client.get('/api/v1/promotions',headers=HEADERS)
+    assert response.status_code == 503
+    assert '020_promotions.sql' in response.json()['detail']
+
+
+def test_promotions_reads_all_pages_and_handles_missing_record(api):
+    client,state=api
+    state['promotions']=[{'id':str(UUID(int=20000+i)),'created_at':'2026-11-23T10:00:00Z',
+        'name':'Promo test','promotion_date':None,'weekdays':[2,4],'discount_percent':10,'is_active':True} for i in range(1305)]
+    response=client.get('/api/v1/promotions',headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()) == 1305
+    requests=[r for r in state['requests'] if r.url.path.endswith('/promotions')]
+    assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
+    assert client.delete(f'/api/v1/promotions/{USER_ID}',headers=HEADERS).status_code == 404
+
+
+def test_quote_loads_all_promotions_and_selects_the_best_without_cumulating_hotel(api):
+    client,state=api
+    state['items']=[rental_item(0)]
+    state['rates']=[rate_row()]
+    state['hotels']=[{'id':LOCATION_B,'name':'Albergo','is_active':True,'discount':15}]
+    state['promotions']=[{'id':str(UUID(int=20000+i)),'name':f'Promo {i}','created_at':'2026-11-23T10:00:00Z',
+        'promotion_date':None,'weekdays':[2],'discount_percent':20,'is_active':True} for i in range(1005)]
+    state['promotions'][-1]['discount_percent']=30
+    request={'starts_on':'2026-12-01','ends_on':'2026-12-01','hotel_id':LOCATION_B,'inventory_ids':[state['items'][0]['id']]}
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-quote',headers=HEADERS,json=request)
+    assert response.status_code == 200
+    body=response.json()
+    assert body['total']=='14.00'
+    assert body['discount_percent']=='30'
+    assert body['promotion']['name']=='Promo 1004'
+    assert body['hotel']['name']=='Albergo'
+    state['requests'].clear()
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-quote',headers=HEADERS,json={**request,'ends_on':'2026-12-03'})
+    assert response.status_code == 200
+    assert response.json()['total']=='40.80'
+    assert response.json()['promotion'] is None
+    assert not any(r.url.path.endswith('/promotions') for r in state['requests'])
+
+
+def test_single_day_quote_does_not_ignore_missing_promotion_configuration(api):
+    client,state=api
+    state['items']=[rental_item(0)]
+    state['rates']=[rate_row()]
+    state['promotions_error']='PGRST205'
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-quote',headers=HEADERS,
+        json={'starts_on':'2026-12-01','ends_on':'2026-12-01','inventory_ids':[state['items'][0]['id']]})
+    assert response.status_code==503
+    assert '020' in response.json()['detail']
+
+
+
+def test_rental_history_preserves_the_applied_promotion_snapshot(api):
+    client,state=api
+    header={**history_header(),'promotion_id':LOCATION_A,'promotion_name':'Promozione salvata'}
+    state['bookings']=[header]
+    state['history_items'],state['history_payments']=history_children(header['id'])
+    response=client.get(f"/api/v1/locations/{LOCATION_A}/rental-bookings/{header['id']}",headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['promotion_name']=='Promozione salvata'
+    assert response.json()['promotion_id']==LOCATION_A
+    assert not any(r.url.path.endswith('/promotions') for r in state['requests'])

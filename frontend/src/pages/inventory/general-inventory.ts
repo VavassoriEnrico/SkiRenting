@@ -1,9 +1,9 @@
 import { sizeLabel } from './rental-inventory';
 import type { Location } from '../../lib/api';
-import type { RentalCategory, RentalItem, RentalVariant } from './rental-inventory';
+import type { RentalCategory, RentalInventory, RentalItem, RentalVariant } from './rental-inventory';
 
-export type GeneralItem = RentalItem & { location:Location };
-export type GeneralInventory = { categories:RentalCategory[]; locations:Location[]; items:GeneralItem[] };
+export type GeneralItem = RentalItem & { location:Location; is_currently_rented?:boolean };
+export type GeneralInventory = { summary?:RentalInventory['summary']; categories:RentalCategory[]; locations:Location[]; items:GeneralItem[] };
 export type SaleStock = { id:string; variant:RentalVariant; location:Location; quantity:number; price:number|null; notes:string|null };
 export type GeneralSaleInventory = { categories:RentalCategory[]; locations:Location[]; items:SaleStock[] };
 export type GeneralRow = { id:string; variant:RentalVariant; units:GeneralItem[]; stocks?:SaleStock[] };

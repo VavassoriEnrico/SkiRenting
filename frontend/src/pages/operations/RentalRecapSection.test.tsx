@@ -77,3 +77,13 @@ describe('Riepilogo noleggio', () => {
     expect(api.post.mock.calls.every(([path]) => path.endsWith('/rental-quote'))).toBe(true);
   });
 });
+
+
+it('shows the winning promotion instead of labelling its discount as a hotel discount', async () => {
+  api.post.mockResolvedValue({...quote,starts_on:'2026-12-01',ends_on:'2026-12-01',days:1,
+    promotion:{id:'promo',name:'Martedì speciale'},discount_percent:'25',subtotal:'20',discount_amount:'5.00',total:'15.00'});
+  render(<RentalRecapSection {...props} period={{...props.period,ends_on:'2026-12-01'}} />);
+  expect(await screen.findByText('Promozione Martedì speciale (25%)')).toBeTruthy();
+  expect(screen.queryByText(/Sconto albergo/)).toBeNull();
+  expect(screen.getAllByText('Albergo').length).toBeGreaterThan(0);
+});

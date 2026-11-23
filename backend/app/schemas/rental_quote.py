@@ -36,7 +36,13 @@ class QuoteHotel(BaseModel):
     name: str
 
 
+class QuotePromotion(BaseModel):
+    id: UUID
+    name: str
+
+
 class RentalQuoteRead(BaseModel):
+    promotion: QuotePromotion | None = None
     starts_on: date
     ends_on: date
     days: int

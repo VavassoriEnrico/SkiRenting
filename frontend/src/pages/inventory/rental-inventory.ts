@@ -66,3 +66,11 @@ export function variantFields(v: RentalVariant) {
   fields.push({ label: 'Anno originale', value: v.year?.toString() || '—' });
   return fields;
 }
+
+
+export function sortRentalCategories(categories: RentalCategory[]): RentalCategory[] {
+  const order = ['ski', 'snowboard', 'ski_boots', 'snowboard_boots', 'poles', 'helmet', 'goggles', 'avalanche', 'snowshoes', 'sled'];
+  return [...categories].sort((a,b) =>
+    (order.includes(a.code) ? order.indexOf(a.code) : order.length) - (order.includes(b.code) ? order.indexOf(b.code) : order.length)
+    || a.name.localeCompare(b.name,'it'));
+}

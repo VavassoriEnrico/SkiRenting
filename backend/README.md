@@ -402,3 +402,43 @@ Le letture sono paginate e protette dalle RLS esistenti: comprendono lo storico
 accessibile all'operatore anche nelle altre sedi, senza filtro sulla sede storica.
 L'endpoint non scrive dati e non richiede nuove migrazioni. I vecchi noleggi non
 ancora importati non partecipano ai conteggi.
+
+Anche `GET /api/v1/rental-inventory` include `summary`: riusa gli stessi criteri
+per noleggi in corso/rientri mancanti e riparazioni del magazzino locale,
+applicandoli all'insieme degli esemplari delle sedi autorizzate. Ogni esemplare è
+contato una volta. Le tre card del generale restano indipendenti dai filtri frontend.
+
+Gli esemplari del generale includono `is_currently_rented`, calcolato dal backend
+con la stessa lettura usata per il totale aggregato. Il frontend può così mostrare
+le tre card per ciascuna sede e riallocarne i conteggi dopo un trasferimento,
+conservando gli stessi criteri del magazzino locale senza richieste per singola sede.
+
+## Promozioni
+
+Dopo `020_promotions.sql`, gli operatori configurati possono usare
+`GET /api/v1/promotions`, `POST /api/v1/promotions` e
+`DELETE /api/v1/promotions/{id}` (rimozione logica tramite is_active=false).
+Il POST richiede name, discount_percent e una delle due configurazioni:
+promotion_date con weekdays vuoto, oppure promotion_date null con weekdays
+contenente i giorni ricorrenti distinti (1=lunedì, 7=domenica). I giorni vengono
+ordinati, nome ripulito e percentuale validata fino a due decimali. Elenco paginato,
+JWT dell'operatore e RLS condivise tra le sedi; nessuna chiave service_role.
+Le promozioni partecipano al preventivo e, dopo la query 021, alla conferma atomica del noleggio.
+
+
+## Applicazione delle promozioni (021)
+
+Eseguire `021_apply_rental_promotions.sql` dopo 020. Le promozioni valgono soltanto
+per noleggi con starts_on = ends_on. Sono valide la data singola esatta oppure il
+giorno ISO della settimana (1=lunedì, 7=domenica), se is_active. Si applica una sola
+percentuale: la maggiore tra tutte le promozioni valide e l'eventuale albergo.
+Per più giorni resta solo lo sconto albergo. A parità con l'albergo vince questo;
+a parità tra promozioni vince l'UUID più basso, identico in Python e PostgreSQL.
+Il preventivo legge tutte le promozioni con paginazione, senza sommarle. Il campo
+promotion contiene id/nome solo quando vince una promozione. La conferma ricalcola
+nel database, blocca la promozione scelta durante la transazione e verifica
+expected_total; un cambio del totale richiede un nuovo preventivo, senza scritture
+parziali. `rental_bookings.promotion_id` e `promotion_name` conservano la scelta e
+il nome storico, mentre discount_percent resta lo sconto effettivo applicato.
+I ritentativi con lo stesso booking_id non ricalcolano un noleggio già confermato;
+rimuovere o cambiare una promozione non cambia i suoi importi storici.

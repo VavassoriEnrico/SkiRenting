@@ -9,7 +9,7 @@ import { InventoryDetailsDialog } from './InventoryDetailsDialog';
 import { NewRentalItemDialog } from './NewRentalItemDialog';
 import { RentalInventoryRates } from './RentalInventoryRates';
 import { RentalUnitDialog } from './RentalUnitDialog';
-import { groupRentalItems, sizeLabel, variantFields } from './rental-inventory';
+import { groupRentalItems, sizeLabel, sortRentalCategories, variantFields } from './rental-inventory';
 import type { RentalInventory, RentalItem, RentalRow } from './rental-inventory';
 
 export function RentalInventoryPage() {
@@ -43,10 +43,7 @@ function RentalInventoryContent({ token, locationId, locationName, locations }: 
   }, [token, locationId, attempt]);
 
   const rows = useMemo(() => groupRentalItems(data?.items || []), [data]);
-  const categories = useMemo(() => [...(data?.categories || [])].sort((a, b) => {
-    const order = ['ski', 'snowboard', 'ski_boots', 'snowboard_boots', 'poles', 'helmet', 'goggles', 'avalanche', 'snowshoes', 'sled'];
-    return (order.includes(a.code) ? order.indexOf(a.code) : order.length) - (order.includes(b.code) ? order.indexOf(b.code) : order.length) || a.name.localeCompare(b.name, 'it');
-  }), [data]);
+  const categories = useMemo(() => sortRentalCategories(data?.categories || []), [data]);
   const currentCategory = categories.find((entry) => entry.id === category) || categories[0];
   const categoryRows = rows.filter((row) => row.variant.category.id === currentCategory?.id);
   const groups = [...new Map(categoryRows.map((row) => [row.group.id, row.group])).values()].sort((a, b) => a.name.localeCompare(b.name, 'it'));

@@ -276,7 +276,7 @@ Cambio sede/sessione e uscita dalla pagina annullano le richieste pendenti; gli
 articoli occupati e le manutenzioni prive di intervento aperto restano non selezionabili.
 
 Magazzino contiene anche **Magazzino generale noleggi** (`/magazzino-generale`): vista
-in sola lettura del materiale da noleggio di tutte le sedi autorizzate, indipendente
+del materiale da noleggio di tutte le sedi autorizzate, indipendente
 dalla sede selezionata nella sidebar. Raggruppa per categoria e caratteristiche
 fisiche (marca, modello, anno, misure, taglia ecc.), anche quando
 il catalogo contiene varianti equivalenti in gruppi tariffari diversi. La ricerca
@@ -284,7 +284,8 @@ comprende codici, sede e gruppo; cercare un codice conserva tutti gli esemplari
 del gruppo. Aprendo una riga, il dialogo mostra gli esemplari separati per sede,
 con codice univoco, stato di magazzino/intervento aperto, gruppo, matricola e note.
 La quantità è il totale censito, non la disponibilità per un periodo di noleggio.
-Creazione e trasferimento restano nel magazzino noleggio della singola sede.
+La creazione resta nel magazzino noleggio della singola sede; il trasferimento è
+disponibile anche nella scheda individuale aperta dal magazzino generale.
 
 La voce **Magazzino generale vendite** (`/magazzino-generale-vendite`) usa la stessa
 pagina dei noleggi con ricerca, filtro categoria, ordinamento e dettaglio per sede,
@@ -312,3 +313,53 @@ modello resta aperto sotto la scheda; Esc/Torna al materiale chiude solo questa.
 Lo spostamento di sede è disponibile nella scheda individuale, dopo il caricamento.
 I conteggi vengono letti all'apertura, con retry e annullamento delle richieste
 quando si chiude o cambia sede. Non sono calcolati per modello o quantità.
+
+
+Nel popup del modello del generale noleggi, gli esemplari sono separati per sede
+con titoli violetto. «Vedi» apre la stessa scheda individuale del magazzino locale:
+caratteristiche, sede, note/matricola e conteggi di noleggi e riparazioni. Note e
+matricola non sono più colonne nella tabella degli esemplari del modello.
+I pulsanti «Sposta articolo in sede [nome]» trasferiscono direttamente il codice
+verso una delle altre sedi autorizzate, usando la sede dell'esemplare come origine
+(anche quando diversa da quella selezionata nella sidebar). Usano la RPC esistente:
+blocco doppio invio, errori senza modifiche anticipate, chiusura bloccata durante
+l'invio. Al successo la scheda individuale si chiude, il modello resta aperto e si
+aggiornano sia gli elenchi degli esemplari sia le quantità nelle card per sede.
+
+Sotto il riepilogo globale, ogni sede ha tre card: totale esemplari, attualmente
+noleggiati e attualmente in riparazione. I noleggiati usano il flag reale restituito
+dal backend, le riparazioni contano maintenance o interventi aperti senza duplicati.
+Le sedi vuote mostrano zero e i filtri della tabella non modificano le card.
+
+
+La sidebar è ordinata in Panoramica (Dashboard/Analytics), Anagrafica, Noleggi,
+Vendite, Operatività (Rientri/Riparazioni), magazzino della sede, magazzino generale
+e Amministrazione. Le operazioni nuove e gli storici sono sotto Noleggi/Vendite.
+`/noleggi/attuali` mostra prenotati, in preparazione e da riconsegnare;
+`/noleggi` mostra conclusi, conclusi da saldare e annullati. Le viste riusano i
+filtri e i dettagli reali della sede e distinguono lo stato effettivo, inclusi i
+noleggi con tutto restituito ma ancora da saldare. Rientri è disponibile in Operatività. La voce Storico noleggi ha corrispondenza
+esatta nel menu, per non risultare attiva insieme a Noleggi attuali.
+
+Gestione include **Promozioni**, collegata a `/management/promozioni`. Il form
+richiede nome e percentuale, permette una data singola oppure la selezione di
+uno o più giorni della settimana. L'elenco mostra nome, validità, percentuale,
+creazione e Rimuovi. Le scritture impediscono invii doppi, conservano i campi in
+caso di errore e vengono annullate all'uscita. I dati sono reali, senza esempi;
+serve eseguire `backend/sql/020_promotions.sql`. Le promozioni sono configurazioni
+condivise; la loro applicazione ai noleggi richiede anche la query 021.
+
+
+Nel riepilogo del nuovo noleggio viene applicato automaticamente il maggiore
+sconto tra albergo e promozioni valide, senza cumulo. Le promozioni valgono solo
+per una giornata; per più giorni rimane lo sconto albergo. Il riepilogo identifica
+la promozione scelta, lo storico mostra il nome salvato alla conferma. Richiede
+`backend/sql/021_apply_rental_promotions.sql` per allineare il salvataggio.
+
+Per un cliente esistente, nel nuovo noleggio cellulare ed email sono modificabili;
+nome/cognome rimangono in sola lettura. «Salva recapiti» aggiorna solo i contatti
+cambiati tramite PATCH /customers/{id}, senza creare duplicati né inviare gli altri
+attributi. La conferma del noleggio salva automaticamente eventuali modifiche ai
+contatti prima della prenotazione e si ferma se il salvataggio fallisce. I dati
+storici non validi ma non modificati non vengono inviati. Titoli violetto, separatori
+violetto da 1px e bordi violetto da 1px sono limitati alla scheda del nuovo noleggio.

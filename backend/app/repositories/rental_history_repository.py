@@ -7,7 +7,7 @@ from app.repositories.rental_inventory_repository import read_all
 from app.repositories.customer_repository import CUSTOMER_FIELDS
 
 HEADER_FIELDS = (
-    'id,booking_number,customer_id,location_id,starts_on,ends_on,status,discount_percent,notes,'
+    'id,booking_number,customer_id,location_id,starts_on,ends_on,status,discount_percent,promotion_id,promotion_name,notes,'
     f'created_by,created_at,updated_at,customer:customers({CUSTOMER_FIELDS}),'
     'hotel:hotels(id,name)'
 )

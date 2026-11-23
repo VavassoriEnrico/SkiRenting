@@ -22,6 +22,8 @@ class HistoryBookingRead(BaseModel):
     ends_on: date
     status: BookingStatus
     discount_percent: Decimal
+    promotion_id: UUID | None = None
+    promotion_name: str | None = None
     notes: str | None = None
     created_by: UUID
     created_at: datetime

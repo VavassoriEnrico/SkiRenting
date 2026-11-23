@@ -29,6 +29,8 @@ def confirm_booking(client: httpx.Client, user_id: UUID, location_id: UUID, data
         code = body.get('code') if isinstance(body, dict) else None
         if code == 'PGRST202':
             raise HTTPException(503, 'Eseguire 012_confirm_rental_booking.sql in Supabase.') from error
+        if code in ('42P01', '42703'):
+            raise HTTPException(503, 'Verifica le query 020 e 021 per le promozioni in Supabase.') from error
         if code == 'P0001':
             raise HTTPException(409, body.get('message', 'Disponibilità o prezzi cambiati. Aggiorna il noleggio.')) from error
         if code == '42501':

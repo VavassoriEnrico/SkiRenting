@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OperationsPage } from './OperationsPage';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { session: { access_token: 'token' } } }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), auth: { session: { access_token: 'token' } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
-vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post }));
+vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post, apiPatch: mocks.patch }));
 
 const customers = [
   { id: 'one', first_name: 'Mario', last_name: 'Rossi', email: 'mario@example.test', phone: '+39 00123', notes: 'Nota Mario' },
@@ -18,6 +18,7 @@ const change = (name: string, value: string) => fireEvent.change(screen.getByLab
 beforeEach(() => {
   mocks.get.mockReset().mockImplementation((path: string) => Promise.resolve(path === '/hotels' ? [{ id: 'hotel-1', name: 'Albergo 1', is_active: true }, { id: 'hotel-2', name: 'Albergo 2', is_active: true }] : customers));
   mocks.post.mockReset().mockResolvedValue(created);
+  mocks.patch.mockReset().mockImplementation((_path:string,_token:string,data:object)=>Promise.resolve({...customers[0],...data}));
   mocks.auth.session = { access_token: 'token' };
 });
 afterEach(cleanup);
@@ -174,4 +175,47 @@ describe('Cliente del nuovo noleggio', () => {
     change('Data di inizio *', '2026-12-11');
     expect(screen.getByRole('alert')).toBeTruthy();
   });
+});
+
+
+it('updates only contact fields of the selected customer, keeping first and last names readonly', async () => {
+  await open(); change('Cognome *','Rossi');
+  fireEvent.click(screen.getByRole('button',{name:/Rossi Mario/}));
+  expect((screen.getByLabelText('Nome *') as HTMLInputElement).readOnly).toBe(true);
+  expect((screen.getByLabelText('Cognome *') as HTMLInputElement).readOnly).toBe(true);
+  expect((screen.getByLabelText('Cellulare') as HTMLInputElement).readOnly).toBe(false);
+  expect((screen.getByLabelText('Email') as HTMLInputElement).readOnly).toBe(false);
+  change('Cellulare','+39 999'); change('Email','nuova@example.test');
+  fireEvent.click(screen.getByRole('button',{name:'Salva recapiti'}));
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'Salva recapiti'})).toBeNull());
+  expect(mocks.patch).toHaveBeenCalledWith('/customers/one','token',{phone:'+39 999',email:'nuova@example.test'},expect.any(AbortSignal));
+  expect(mocks.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'Cambia cliente'}));
+  fireEvent.click(screen.getByRole('button',{name:/Rossi Mario/}));
+  expect((screen.getByLabelText('Email') as HTMLInputElement).value).toBe('nuova@example.test');
+});
+
+it('preserves old malformed email when updating only the phone and sends no unrelated fields', async () => {
+  mocks.get.mockResolvedValue([{...customers[0],email:'vecchia mail non valida'}]);
+  mocks.patch.mockResolvedValue({...customers[0],email:'vecchia mail non valida',phone:'12345'});
+  await open(); change('Cognome *','Rossi');
+  fireEvent.click(screen.getByRole('button',{name:/Rossi Mario/}));
+  change('Cellulare','12345');
+  fireEvent.click(screen.getByRole('button',{name:'Salva recapiti'}));
+  await waitFor(()=>expect(mocks.patch).toHaveBeenCalledTimes(1));
+  expect(mocks.patch.mock.calls[0][2]).toEqual({phone:'12345'});
+});
+
+it('retains edited contacts after an update error and prevents duplicate saves', async () => {
+  let fail!:(error:Error)=>void;
+  mocks.patch.mockImplementationOnce(()=>new Promise((_,reject)=>{fail=reject;}));
+  await open(); change('Cognome *','Rossi');
+  fireEvent.click(screen.getByRole('button',{name:/Rossi Mario/}));
+  change('Cellulare','12345');
+  const save=screen.getByRole('button',{name:'Salva recapiti'});
+  fireEvent.click(save);fireEvent.click(save);
+  expect(mocks.patch).toHaveBeenCalledTimes(1);
+  await act(async()=>fail(new Error('Recapiti non salvati')));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent','Recapiti non salvati');
+  expect((screen.getByLabelText('Cellulare') as HTMLInputElement).value).toBe('12345');
 });

@@ -14,6 +14,7 @@ import { ReturnsPage } from '../pages/returns/ReturnsPage';
 import { RequireAuth } from '../auth/RequireAuth';
 import { LoginPage } from '../pages/login/LoginPage';
 import { ManagementPage } from '../pages/management/ManagementPage';
+import { PromotionsPage } from '../pages/management/PromotionsPage';
 import { HotelsPage } from '../pages/management/HotelsPage';
 import { RentalRatesPage } from '../pages/management/RentalRatesPage';
 
@@ -27,9 +28,11 @@ export function App() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/clienti" element={<CustomersPage />} />
         <Route path="/management" element={<ManagementPage />} />
+        <Route path="/management/promozioni" element={<PromotionsPage />} />
         <Route path="/management/hotels" element={<HotelsPage />} />
         <Route path="/management/tariffe" element={<RentalRatesPage />} />
-        <Route path="/noleggi" element={<RentalsPage />} />
+        <Route path="/noleggi/attuali" element={<RentalsPage view="current" />} />
+        <Route path="/noleggi" element={<RentalsPage view="history" />} />
         <Route path="/vendite" element={<SalesPage />} />
         <Route path="/operativita/noleggi" element={<OperationsPage mode="rental" />} />
         <Route path="/operativita/vendite" element={<OperationsPage mode="sale" />} />

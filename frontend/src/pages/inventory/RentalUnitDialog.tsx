@@ -1,7 +1,7 @@
 import { ArrowRightLeft, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { apiGet } from '../../lib/api';
+import { apiGet, apiPost } from '../../lib/api';
 import type { Location } from '../../lib/api';
 import { RentalItemTransfer } from './RentalItemTransfer';
 import type { TransferResult } from './RentalItemTransfer';
@@ -15,9 +15,9 @@ export type RentalUnitDetails = {
   statistics: { rental_count: number; repair_count: number; rentals_since_last_repair: number; last_repair_at: string | null };
 };
 
-export function RentalUnitDialog({ item, token, source, destinations, onClose, onTransferred }: {
+export function RentalUnitDialog({ item, token, source, destinations, onClose, onTransferred, directTransfer = false }: {
   item: RentalItem; token: string; source: Location; destinations: Location[];
-  onClose: () => void; onTransferred: (result: TransferResult, name: string) => void;
+  directTransfer?: boolean; onClose: () => void; onTransferred: (result: TransferResult, name: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<RentalUnitDetails | null>(null);
@@ -25,6 +25,10 @@ export function RentalUnitDialog({ item, token, source, destinations, onClose, o
   const [attempt, setAttempt] = useState(0);
   const [transferring, setTransferring] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const transferRequest = useRef<AbortController | null>(null);
+  const transferInFlight = useRef(false);
+  useEffect(() => () => transferRequest.current?.abort(), []);
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -34,6 +38,19 @@ export function RentalUnitDialog({ item, token, source, destinations, onClose, o
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Impossibile caricare la scheda.'); });
     return () => controller.abort();
   }, [item.id, source.id, token, attempt]);
+  async function moveTo(target: Location) {
+    if (transferInFlight.current || !data || target.id === source.id || !destinations.some(entry => entry.id === target.id)) return;
+    transferInFlight.current = true; setBusy(true); setTransferError('');
+    const controller = new AbortController(); transferRequest.current = controller;
+    try {
+      const result = await apiPost<TransferResult>(`/locations/${source.id}/rental-inventory/${item.id}/transfer`, token, { destination_location_id: target.id }, controller.signal);
+      if (!controller.signal.aborted) onTransferred(result, target.name);
+    } catch (cause) {
+      if (!controller.signal.aborted) setTransferError(cause instanceof Error ? cause.message : 'Impossibile spostare l’articolo.');
+    } finally {
+      if (!controller.signal.aborted) { transferInFlight.current = false; setBusy(false); }
+    }
+  }
   const current = data?.item || item;
   const statistics = data?.statistics;
   return <dialog ref={dialog} className="sale-dialog" aria-label={`Scheda esemplare ${item.code}`}
@@ -47,7 +64,7 @@ export function RentalUnitDialog({ item, token, source, destinations, onClose, o
     <div className="sale-dialog-header"><div><p className="sale-dialog-eyebrow">Esemplare · {source.name}</p><h2>{current.code}</h2><p className="page-description">{current.variant.brand} {current.variant.model}</p></div><button className="icon-button" type="button" aria-label="Chiudi scheda esemplare" autoFocus disabled={busy} onClick={onClose}><X size={20} aria-hidden="true" /></button></div>
     <div className="sale-dialog-body">
       <section className="sale-detail-section"><h3>Caratteristiche del materiale</h3><dl className="sale-details-grid">
-        {[{label:'Codice',value:current.code},...variantFields(current.variant),{label:'Categoria',value:current.variant.category.name},{label:'Gruppo noleggio',value:current.group.name},{label:'Stato',value:rentalStatuses[current.status]},{label:'Matricola',value:current.serial_number || '—'},{label:'Note esemplare',value:current.notes || '—'},...(current.purchase_price == null ? [] : [{label:'Prezzo di acquisto',value:currency.format(current.purchase_price)}]),...(current.legacy_sold_price == null ? [] : [{label:'Prezzo venduto storico',value:currency.format(current.legacy_sold_price)}])].map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}
+        {[{label:'Codice',value:current.code},{label:'Sede',value:source.name},...variantFields(current.variant),{label:'Categoria',value:current.variant.category.name},{label:'Gruppo noleggio',value:current.group.name},{label:'Stato',value:rentalStatuses[current.status]},{label:'Matricola',value:current.serial_number || '—'},{label:'Note esemplare',value:current.notes || '—'},...(current.purchase_price == null ? [] : [{label:'Prezzo di acquisto',value:currency.format(current.purchase_price)}]),...(current.legacy_sold_price == null ? [] : [{label:'Prezzo venduto storico',value:currency.format(current.legacy_sold_price)}])].map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}
       </dl></section>
       <section className="sale-detail-section"><h3>Noleggi e riparazioni</h3>
         {error ? <><p className="auth-error" role="alert">{error}</p><button type="button" className="sales-button" onClick={()=>setAttempt(value=>value+1)}>Riprova conteggi</button></> : !statistics ? <p role="status">Caricamento conteggi…</p> : <>
@@ -60,7 +77,8 @@ export function RentalUnitDialog({ item, token, source, destinations, onClose, o
           <p className="rental-form-hint">Conteggi sui noleggi registrati e già iniziati, esclusi quelli annullati, e sulle riparazioni concluse. Senza riparazioni precedenti, il conteggio dall’ultima riparazione coincide con il totale.</p>
         </>}
       </section>
-      {transferring ? <RentalItemTransfer item={current} token={token} source={source} destinations={destinations} onBusyChange={setBusy} onCancel={()=>setTransferring(false)} onSuccess={onTransferred} /> : <div className="rental-customer-actions"><button className="sales-button" type="button" disabled={!data || !destinations.length} onClick={()=>setTransferring(true)}><ArrowRightLeft size={14} aria-hidden="true" />Sposta sede</button></div>}
+      {transferError && <p className="auth-error" role="alert">{transferError}</p>}
+      {directTransfer ? <div className="rental-customer-actions">{destinations.filter(target=>target.id!==source.id).map(target=><button key={target.id} className="sales-button" type="button" disabled={!data || busy} onClick={()=>void moveTo(target)}><ArrowRightLeft size={14} aria-hidden="true" />{busy?'Spostamento…':`Sposta articolo in sede ${target.name}`}</button>)}</div> : transferring ? <RentalItemTransfer item={current} token={token} source={source} destinations={destinations} onBusyChange={setBusy} onCancel={()=>setTransferring(false)} onSuccess={onTransferred} /> : <div className="rental-customer-actions"><button className="sales-button" type="button" disabled={!data || !destinations.length} onClick={()=>setTransferring(true)}><ArrowRightLeft size={14} aria-hidden="true" />Sposta sede</button></div>}
     </div>
     <div className="sale-dialog-footer"><button className="sales-button" type="button" disabled={busy} onClick={onClose}>Torna al materiale</button></div>
   </dialog>;

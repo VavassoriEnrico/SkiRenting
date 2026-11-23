@@ -10,6 +10,16 @@ from app.schemas.rental_inventory import RentalInventoryRead, RentalInventorySum
 from app.services.operator_service import get_authorized_location, get_operator_session
 
 
+
+def inventory_summary(client: httpx.Client, items: list[dict], repairs: dict, today: date, rented_ids: set[str] | None = None) -> RentalInventorySummary:
+    if rented_ids is None:
+        rented_ids = rental_inventory_repository.unavailable_item_ids(client, items, today, today)
+    return RentalInventorySummary(
+        currently_rented=len(rented_ids),
+        currently_in_repair=sum(item['status'] == 'maintenance' or item['id'] in repairs for item in items),
+    )
+
+
 def get_inventory(
     client: httpx.Client, user_id: UUID, location_id: UUID, available_only: bool = False,
     starts_on: date | None = None, ends_on: date | None = None,
@@ -27,12 +37,8 @@ def get_inventory(
             repairs = material_repair_repository.open_for_items(client,items)
             items = [{**item,'open_repair':repairs.get(item['id'])} for item in items]
         else:
-            rented_ids = rental_inventory_repository.unavailable_item_ids(client, items, today, today)
             repairs = material_repair_repository.open_for_items(client, items)
-            summary = RentalInventorySummary(
-                currently_rented=len(rented_ids),
-                currently_in_repair=sum(item['status'] == 'maintenance' or item['id'] in repairs for item in items),
-            )
+            summary = inventory_summary(client, items, repairs, today)
         return RentalInventoryRead(
             summary=summary,
             categories=rental_inventory_repository.list_categories(client),
@@ -121,10 +127,13 @@ def get_general_inventory(client: httpx.Client, user_id: UUID):
     try:
         items = rental_inventory_repository.list_items_for_locations(client,location_ids)
         repairs = material_repair_repository.open_for_items(client,items)
+        today = datetime.now(ZoneInfo('Europe/Rome')).date()
+        rented_ids = rental_inventory_repository.unavailable_item_ids(client, items, today, today)
         return {
+            'summary': inventory_summary(client, items, repairs, today, rented_ids),
             'categories': rental_inventory_repository.list_categories(client),
             'locations': operator.locations,
-            'items': [{**item,'open_repair':repairs.get(item['id'])} for item in items],
+            'items': [{**item,'open_repair':repairs.get(item['id']),'is_currently_rented':item['id'] in rented_ids} for item in items],
         }
     except httpx.HTTPError as error:
         raise HTTPException(503,'Impossibile caricare il magazzino generale da Supabase.') from error

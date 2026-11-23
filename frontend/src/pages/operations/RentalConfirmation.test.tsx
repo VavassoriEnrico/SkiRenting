@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OperationsPage } from './OperationsPage';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), confirm: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' } }) }));
-vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post }));
+vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post, apiPatch: mocks.patch }));
 const customer = { id: 'customer', first_name: 'Mario', last_name: 'Rossi', email: null, phone: null, notes: null };
 const item = {
   id: 'item-one', code: '+001', status: 'active', is_rentable: true, is_bookable: true,
@@ -20,6 +20,7 @@ const change = (label: string, value: string) => fireEvent.change(screen.getByLa
 beforeEach(() => {
   mocks.get.mockReset().mockImplementation((path: string) => Promise.resolve(path === '/customers' ? [customer] : path === '/hotels' ? [] : { categories: [item.variant.category], items: [item] }));
   mocks.confirm.mockReset().mockResolvedValue(saved);
+  mocks.patch.mockReset().mockImplementation((_path:string,_token:string,data:object)=>Promise.resolve({...customer,...data}));
   mocks.post.mockReset().mockImplementation((path: string, token: string, data: { starts_on: string; ends_on: string }, signal: AbortSignal) => {
     if (path.endsWith('/rental-bookings')) return mocks.confirm(path, token, data, signal);
     return Promise.resolve({ ...data, days: 3, items: [{ inventory_id: item.id, code: item.code, brand: 'Marca', model: 'Modello', group_name: 'RACE', daily_price: '16', amount: '48' }],
@@ -97,4 +98,26 @@ describe('Conferma noleggio', () => {
     await waitFor(() => expect(button.disabled).toBe(false));
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
+});
+
+
+it('persists edited contacts before confirming the rental with the existing customer ID', async () => {
+  await fillRental();
+  change('Cellulare','+39 1234'); change('Email','aggiornata@example.test');
+  fireEvent.click(screen.getByRole('radio',{name:'Paga dopo'}));
+  fireEvent.click(screen.getByRole('button',{name:'Conferma noleggio'}));
+  await screen.findByRole('heading',{name:'Noleggio n. 125 confermato'});
+  expect(mocks.patch).toHaveBeenCalledWith('/customers/customer','token',{phone:'+39 1234',email:'aggiornata@example.test'},expect.any(AbortSignal));
+  expect(mocks.patch.mock.invocationCallOrder[0]).toBeLessThan(mocks.confirm.mock.invocationCallOrder[0]);
+  expect(mocks.confirm.mock.calls[0][2].customer_id).toBe('customer');
+});
+
+it('does not confirm the rental if updated customer contacts cannot be saved', async () => {
+  mocks.patch.mockRejectedValueOnce(new Error('Email non valida'));
+  await fillRental();change('Email','nonvalida');
+  fireEvent.click(screen.getByRole('radio',{name:'Paga dopo'}));
+  fireEvent.click(screen.getByRole('button',{name:'Conferma noleggio'}));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent','Email non valida');
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  expect((screen.getByLabelText('Email') as HTMLInputElement).value).toBe('nonvalida');
 });

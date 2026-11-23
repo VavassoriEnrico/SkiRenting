@@ -10,12 +10,14 @@ import { RentalHistoryDialog } from './RentalHistoryDialog';
 import { historyDate, historyMoney, historyStatuses, historyStatus } from './rental-history';
 import type { HistoryBooking, HistoryDisplayStatus } from './rental-history';
 
-export function RentalsPage() {
+type RentalView = 'all' | 'current' | 'history';
+
+export function RentalsPage({ view = 'all' }: { view?: RentalView }) {
   const { session, location } = useAuth();
-  return session && location ? <RentalHistory key={`${location.id}:${session.access_token}`} token={session.access_token} locationId={location.id} locationName={location.name} /> : <p role="status">Seleziona una sede per consultare i noleggi.</p>;
+  return session && location ? <RentalHistory key={`${view}:${location.id}:${session.access_token}`} view={view} token={session.access_token} locationId={location.id} locationName={location.name} /> : <p role="status">Seleziona una sede per consultare i noleggi.</p>;
 }
 
-function RentalHistory({ token, locationId, locationName }: { token: string; locationId: string; locationName: string }) {
+function RentalHistory({ token, locationId, locationName, view }: { token: string; locationId: string; locationName: string; view: RentalView }) {
   const [bookings, setBookings] = useState<HistoryBooking[] | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -38,7 +40,10 @@ function RentalHistory({ token, locationId, locationName }: { token: string; loc
 
   const terms = normalizeCustomerText(query).trim().split(/\s+/);
   const invalidPeriod = !!(from && to && to < from);
-  const filtered = (bookings || []).filter((booking) => {
+  const isClosed = (booking: HistoryBooking) => ['completed', 'awaiting_payment', 'cancelled'].includes(historyStatus(booking));
+  const scopedBookings = (bookings || []).filter(booking => view === 'all' || (view === 'history' ? isClosed(booking) : !isClosed(booking)));
+  const statusOptions = Object.entries(historyStatuses).filter(([value]) => view === 'all' || (view === 'history' ? ['completed','awaiting_payment','cancelled'].includes(value) : ['confirmed','preparing','active'].includes(value)));
+  const filtered = scopedBookings.filter((booking) => {
     const text = normalizeCustomerText([booking.booking_number, booking.customer.first_name, booking.customer.last_name, booking.customer.email, booking.customer.phone].join(' '));
     const phone = (booking.customer.phone || '').replace(/\D/g, '');
     return !invalidPeriod && (!status || historyStatus(booking) === status) && (!from || booking.ends_on >= from) && (!to || booking.starts_on <= to)
@@ -50,10 +55,10 @@ function RentalHistory({ token, locationId, locationName }: { token: string; loc
   function reset() { setQuery(''); setStatus(''); setFrom(''); setTo(''); setPage(0); }
 
   return <div className="dashboard-page rentals-page">
-    <div className="dashboard-heading"><div><div className="page-heading"><span className="heading-icon"><CalendarDays size={21} aria-hidden="true" /></span><h1>Storico noleggi</h1></div><p className="page-description">Tutti i noleggi di {locationName}, dalle prenotazioni ai noleggi conclusi.</p></div><button className="sales-button" type="button" onClick={() => setAttempt((value) => value + 1)}>Aggiorna</button></div>
+    <div className="dashboard-heading"><div><div className="page-heading"><span className="heading-icon"><CalendarDays size={21} aria-hidden="true" /></span><h1>{view === 'current' ? 'Noleggi attuali' : 'Storico noleggi'}</h1></div><p className="page-description">{view === 'current' ? `Noleggi prenotati, in preparazione e da riconsegnare di ${locationName}.` : view === 'history' ? `Noleggi conclusi, da saldare e annullati di ${locationName}.` : `Tutti i noleggi di ${locationName}, dalle prenotazioni ai noleggi conclusi.`}</p></div><button className="sales-button" type="button" onClick={() => setAttempt((value) => value + 1)}>Aggiorna</button></div>
     {bookings && <section className="stats-section tone-indigo rentals-summary" aria-label="Riepilogo dei noleggi filtrati"><div className="stats-grid"><StatCard label="Noleggi" value={String(filtered.length)} detail="Nella selezione corrente" icon={CalendarDays} /><StatCard label="Conclusi" value={String(filtered.filter((booking) => ['completed', 'awaiting_payment'].includes(historyStatus(booking))).length)} detail="Noleggi conclusi nella selezione" icon={CalendarCheck} /><StatCard label="Annullati" value={String(filtered.filter((booking) => booking.status === 'cancelled').length)} detail="Prenotazioni annullate nella selezione" icon={X} /></div></section>}
-    <section className="rentals-panel" aria-labelledby="history-list-title"><div className="rentals-panel-heading"><h2 id="history-list-title">Elenco noleggi</h2>{bookings && <span className="rentals-count" role="status">{filtered.length} di {bookings.length}</span>}</div>
-      <div className="rentals-filters history-filters"><div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="rental-history-search">Cerca cliente, email, telefono o numero noleggio</label><input id="rental-history-search" type="search" placeholder="Cliente, email, telefono o numero…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></div><label className="period-select"><span className="sr-only">Stato noleggio</span><select value={status} onChange={(event) => { setStatus(event.target.value as HistoryDisplayStatus | ''); setPage(0); }}><option value="">Tutti gli stati</option>{Object.entries(historyStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="history-date-filter">Dal<input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(0); }} /></label><label className="history-date-filter">Al<input type="date" min={from || undefined} value={to} onChange={(event) => { setTo(event.target.value); setPage(0); }} /></label>{hasFilters && <button className="reset-filters" type="button" onClick={reset}><X size={14} aria-hidden="true" />Azzera filtri</button>}</div>
+    <section className="rentals-panel" aria-labelledby="history-list-title"><div className="rentals-panel-heading"><h2 id="history-list-title">Elenco noleggi</h2>{bookings && <span className="rentals-count" role="status">{filtered.length} di {scopedBookings.length}</span>}</div>
+      <div className="rentals-filters history-filters"><div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="rental-history-search">Cerca cliente, email, telefono o numero noleggio</label><input id="rental-history-search" type="search" placeholder="Cliente, email, telefono o numero…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></div><label className="period-select"><span className="sr-only">Stato noleggio</span><select value={status} onChange={(event) => { setStatus(event.target.value as HistoryDisplayStatus | ''); setPage(0); }}><option value="">Tutti gli stati</option>{statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="history-date-filter">Dal<input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(0); }} /></label><label className="history-date-filter">Al<input type="date" min={from || undefined} value={to} onChange={(event) => { setTo(event.target.value); setPage(0); }} /></label>{hasFilters && <button className="reset-filters" type="button" onClick={reset}><X size={14} aria-hidden="true" />Azzera filtri</button>}</div>
       {invalidPeriod && <p className="auth-error hotels-error" role="alert">La fine del filtro non può precedere l’inizio.</p>}
       {error ? <div className="rentals-empty"><p className="auth-error" role="alert">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)}>Riprova</button></div> : !bookings ? <div className="rentals-empty" role="status">Caricamento noleggi…</div> : <>
         <div className="rentals-table-scroll" role="region" aria-label="Elenco noleggi della sede" tabIndex={0}><table className="rentals-table history-bookings-table"><caption className="sr-only">Noleggi della sede attiva con prezzi e pagamenti registrati</caption><thead><tr><th scope="col">Numero</th><th scope="col">Cliente</th><th scope="col">Periodo</th><th scope="col">Stato</th><th scope="col">Articoli</th><th scope="col">Totale</th><th scope="col">Pagato</th><th scope="col">Residuo</th><th scope="col">Azioni</th></tr></thead><tbody>

@@ -55,7 +55,7 @@ def history_error(error: httpx.HTTPError) -> HTTPException:
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('42703', 'PGRST204'):
-            return HTTPException(503, 'Aggiornare i campi cliente con 015_customer_profile_fields.sql in Supabase.')
+            return HTTPException(503, 'Verifica 015_customer_profile_fields.sql e 021_apply_rental_promotions.sql in Supabase.')
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01'):
             return HTTPException(503, 'Tabelle noleggio non disponibili. Verificare la query 007.')
         return HTTPException(503, 'Impossibile caricare i noleggi da Supabase.')

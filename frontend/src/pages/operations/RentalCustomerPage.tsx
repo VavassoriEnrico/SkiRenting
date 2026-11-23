@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
-import { apiGet, apiPost } from '../../lib/api';
+import { apiGet, apiPatch, apiPost } from '../../lib/api';
 import { normalizeCustomerText } from '../customers/customer';
 import { skillLevels } from '../customers/customer';
 import type { Customer, SkillLevel } from '../customers/customer';
@@ -77,6 +77,24 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
   useEffect(() => () => confirmRequest.current?.abort(), []);
   useEffect(() => { if (isNew) firstNameInput.current?.focus(); }, [isNew]);
 
+  const contactChanges: { email?: string | null; phone?: string | null } = {};
+  if (selected) {
+    for (const field of ['email','phone'] as const) {
+      if (values[field].trim() !== (selected[field] || '').trim()) contactChanges[field] = values[field].trim() || null;
+    }
+  }
+  const contactsChanged = Object.keys(contactChanges).length > 0;
+
+  async function updateContacts(controller: AbortController) {
+    if (!selected || !contactsChanged) return selected;
+    const customer = await apiPatch<Customer>(`/customers/${selected.id}`, token, contactChanges, controller.signal);
+    if (!controller.signal.aborted) {
+      setCustomers(current => current?.map(entry => entry.id === customer.id ? customer : entry) || null);
+      selectCustomer(customer, registered);
+    }
+    return customer;
+  }
+
   const surname = normalizeCustomerText(values.last_name.trim());
   const matches = surname && customers
     ? customers.filter((customer) => normalizeCustomerText(customer.last_name).includes(surname))
@@ -96,18 +114,18 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
 
   async function saveCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || !isNew || !customers) return;
+    if (submitting.current || confirmInFlight.current || (!isNew && !selected) || !customers || (selected && !contactsChanged)) return;
     submitting.current = true; setSaving(true); setSaveError('');
     const controller = new AbortController();
     saveRequest.current = controller;
     try {
-      const customer = await apiPost<Customer>('/customers', token, {
+      const customer = selected ? await updateContacts(controller) : await apiPost<Customer>('/customers', token, {
         first_name: values.first_name.trim(), last_name: values.last_name.trim(),
         email: values.email.trim() || null, phone: values.phone.trim() || null, notes: values.notes.trim() || null,
         birth_date: values.birth_date || null, skill_level: values.skill_level || null,
         language: values.language.trim().toUpperCase() || null, country_code: values.country_code.trim().toUpperCase() || null,
       }, controller.signal);
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && customer && !selected) {
         setCustomers((current) => [...(current || []), customer]);
         selectCustomer(customer, true);
       }
@@ -119,10 +137,14 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
   }
 
   async function confirmBooking() {
-    if (confirmInFlight.current || !selected || !locationId || !paymentState.complete || currentTotal === null) return;
+    if (confirmInFlight.current || submitting.current || !selected || !locationId || !paymentState.complete || currentTotal === null) return;
     confirmInFlight.current = true; setConfirming(true); setConfirmError('');
     const controller = new AbortController(); confirmRequest.current = controller;
     try {
+      if (contactsChanged) {
+        await updateContacts(controller);
+        if (controller.signal.aborted) return;
+      }
       const booking = await apiPost<SavedBooking>(`/locations/${locationId}/rental-bookings`, token, {
         booking_id: bookingId, customer_id: selected.id, starts_on: period.starts_on, ends_on: period.ends_on,
         hotel_id: period.hotel || null, inventory_ids: equipment.map((item) => item.id), expected_total: currentTotal,
@@ -152,7 +174,7 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
       <fieldset className="rental-booking-fields rental-booking-sheet" disabled={confirming}>
       <div className="rental-booking-overview">
       <RentalSection id="rental-customer" title="Dati del cliente">
-        <form className="rental-customer-body" onSubmit={saveCustomer}>
+        <form className="rental-customer-body" noValidate={!!selected} onSubmit={saveCustomer}>
           <div className="rental-form-grid rental-customer-fields">
             <label>Cognome *
               <input ref={lastNameInput} required maxLength={200} autoComplete="family-name" value={values.last_name} readOnly={!!selected} disabled={saving} onChange={(event) => { setValues({ ...values, last_name: event.target.value }); setSaveError(''); }} aria-describedby={!selected && !isNew ? 'rental-customer-search-hint' : undefined} />
@@ -175,8 +197,8 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
 
             {(selected || isNew) && <>
               <label>Nome *<input ref={firstNameInput} required maxLength={200} autoComplete="given-name" readOnly={!!selected} disabled={saving} value={values.first_name} onChange={(event) => setValues({ ...values, first_name: event.target.value })} /></label>
-              <label>Cellulare<input type="tel" maxLength={100} autoComplete="tel" readOnly={!!selected} disabled={saving} value={values.phone} onChange={(event) => setValues({ ...values, phone: event.target.value })} /></label>
-              <label>Email<input type="email" maxLength={254} autoComplete="email" readOnly={!!selected} disabled={saving} value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} /></label>
+              <label>Cellulare<input type="tel" maxLength={100} autoComplete="tel" disabled={saving} value={values.phone} onChange={(event) => setValues({ ...values, phone: event.target.value })} /></label>
+              <label>Email<input type="email" maxLength={254} autoComplete="email" disabled={saving} value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} /></label>
             </>}
           </div>
 
@@ -188,9 +210,10 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
           </div>}
           {saveError && <p className="auth-error" role="alert">{saveError}</p>}
           {selected && <div className="rental-customer-selected" role="status"><Check size={20} aria-hidden="true" /><div><strong>{registered ? 'Cliente registrato e selezionato' : 'Cliente selezionato'}</strong><p>{selected.first_name} {selected.last_name}</p></div></div>}
+          {contactsChanged && <p className="rental-form-hint">Salva i recapiti oppure conferma il noleggio per aggiornarli nell’anagrafica del cliente.</p>}
           {(selected || isNew) && <div className="rental-customer-actions">
             <button className="sales-button" type="button" disabled={saving} onClick={searchAgain}><Search size={16} aria-hidden="true" />{selected ? 'Cambia cliente' : 'Torna alla ricerca'}</button>
-            {isNew && <button className="sales-button sales-button-primary" type="submit" disabled={saving}>{saving ? 'Salvataggio…' : 'Salva nuovo cliente'}</button>}
+            {(isNew || contactsChanged) && <button className="sales-button sales-button-primary" type="submit" disabled={saving}>{saving ? 'Salvataggio…' : isNew ? 'Salva nuovo cliente' : 'Salva recapiti'}</button>}
           </div>}
         </form>
       </RentalSection>

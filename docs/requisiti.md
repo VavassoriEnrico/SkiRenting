@@ -7,11 +7,15 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 ## Navigazione
 
 - Panoramica: Dashboard e Analytics.
-- Storico: Vendite e Noleggi passati, solo consultazione, ricerca, filtri e documenti.
-- Operatività: funzioni per nuovi Noleggi e nuove Vendite.
-- Rientri in Operatività: pagina predisposta nel frontend con dati dimostrativi;
-  registrazione effettiva, scansioni e aggiornamenti del magazzino da implementare.
-- Magazzino: Magazzino noleggio e Magazzino vendita.
+- Anagrafica: Clienti.
+- Noleggi: Nuovo noleggio, Noleggi attuali e Storico noleggi.
+- Vendite: Nuova vendita e Storico vendite.
+- Operatività: Rientri e Riparazioni.
+- Magazzino della sede selezionata: Magazzino noleggi e Magazzino vendite.
+- Magazzino generale: Magazzino generale noleggi e Magazzino generale vendite.
+- Amministrazione: Gestione.
+- Noleggi attuali comprende prenotati, in preparazione e da riconsegnare;
+  lo storico comprende conclusi, conclusi da saldare e annullati.
 - Scheda preparazione noleggi: prevista; collocazione e flusso da definire.
 
 ## Dati e identificazione del materiale
@@ -45,6 +49,18 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 - Consentire più pagamenti riferiti allo stesso noleggio.
 - Metodi di pagamento effettivi da concordare.
 - Gestione preparazione, consegna e rientri da definire.
+
+## Promozioni
+
+- Card Promozioni in Gestione, con elenco, inserimento e rimozione.
+- Nome, ID e data/ora di creazione, percentuale di sconto.
+- Validità alternativa: data singola oppure uno o più giorni ricorrenti della settimana.
+- Configurazioni condivise tra le sedi; rimozione logica per preservare i record.
+- Valide esclusivamente per noleggi di una giornata: data esatta o giorno della settimana.
+- Si applica solo lo sconto più alto tra promozioni valide e albergo, senza cumulo.
+- Per noleggi di più giorni valgono solo gli eventuali sconti albergo.
+- Nel nuovo noleggio si possono aggiornare cellulare/email del cliente esistente,
+  mantenendo nome e cognome bloccati; modifiche salvate nell'anagrafica.
 
 ## Vendite
 
@@ -85,3 +101,4 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
   coerenza tra stato dell'articolo in magazzino (`rental_inventory.status`),
   interventi aperti in `material_repairs`, elenco Riparazioni e conteggio nella card.
   Verificare anche invio in riparazione e chiusura dell'intervento al nuovo noleggio.
+- [ ] Sistemare la dashboard come ultimo intervento, dopo aver definito le altre funzionalità e i dati da riepilogare.
