@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routers import general_inventory, promotions, material_repairs, customers, health, hotels, operator, rental_bookings, rental_inventory, rental_quote, rental_rates
+from app.api.routers import general_inventory, seasonal, promotions, material_repairs, customers, health, hotels, operator, rental_bookings, rental_inventory, rental_quote, rental_rates
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -17,3 +17,5 @@ api_router.include_router(material_repairs.router)
 api_router.include_router(general_inventory.router)
 
 api_router.include_router(promotions.router)
+
+api_router.include_router(seasonal.router)

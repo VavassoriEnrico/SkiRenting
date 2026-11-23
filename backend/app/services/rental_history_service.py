@@ -20,6 +20,9 @@ def enrich(headers: list[dict], items: list[dict], payments: list[dict], details
     result = []
     for header in headers:
         booking_items = by_item[header['id']]
+        has_pack = any(item.get('seasonal_pricing') == 'pack' or item.get('seasonal_pack_main_id') for item in booking_items)
+        has_single = any(item.get('seasonal_pricing') not in ('pack', 'included')
+                         and not item.get('seasonal_pack_main_id') for item in booking_items)
         booking_payments = by_payment[header['id']]
         subtotal = sum((Decimal(str(item['amount'])) for item in booking_items), Decimal('0'))
         paid = sum((Decimal(str(payment['amount'])) for payment in booking_payments), Decimal('0'))
@@ -27,6 +30,7 @@ def enrich(headers: list[dict], items: list[dict], payments: list[dict], details
             Decimal('0.01'), rounding=ROUND_HALF_UP,
         )
         row = {**header, 'item_count': len(booking_items),
+               'rental_formula': 'mixed' if has_pack and has_single else 'pack' if has_pack else 'single',
                'returned_item_count': sum(item['returned_at'] is not None for item in booking_items), 'subtotal': subtotal,
                'discount_amount': subtotal - total, 'total': total, 'paid_amount': paid, 'balance': total - paid}
         if details:
@@ -55,7 +59,7 @@ def history_error(error: httpx.HTTPError) -> HTTPException:
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('42703', 'PGRST204'):
-            return HTTPException(503, 'Verifica 015_customer_profile_fields.sql e 021_apply_rental_promotions.sql in Supabase.')
+            return HTTPException(503, 'Verifica 015_customer_profile_fields.sql , 021_apply_rental_promotions.sql e 023_seasonal_rentals.sql in Supabase.')
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01'):
             return HTTPException(503, 'Tabelle noleggio non disponibili. Verificare la query 007.')
         return HTTPException(503, 'Impossibile caricare i noleggi da Supabase.')
@@ -88,7 +92,7 @@ def read_today_returns(client: httpx.Client, user_id: UUID, location_id: UUID):
 def register_return(client: httpx.Client, user_id: UUID, location_id: UUID, data):
     get_authorized_location(client, user_id, location_id)
     try:
-        result = rental_history_repository.register_return(client, location_id, data.request_id, data.code)
+        result = rental_history_repository.register_return(client, location_id, data.request_id, data.code, data.booking_id)
     except httpx.HTTPStatusError as error:
         try:
             body = error.response.json()
@@ -96,7 +100,7 @@ def register_return(client: httpx.Client, user_id: UUID, location_id: UUID, data
             body = {}
         code = body.get('code') if isinstance(body, dict) else None
         if code in ('PGRST202', '42703', '42P01'):
-            raise HTTPException(503, 'Eseguire 013_register_rental_return.sql in Supabase.') from error
+            raise HTTPException(503, 'Verifica 013_register_rental_return.sql e 025_generic_poles.sql in Supabase.') from error
         if code == '42501':
             raise HTTPException(403, 'Non sei autorizzato a registrare rientri in questa sede.') from error
         if code in ('P0001', 'P0002'):

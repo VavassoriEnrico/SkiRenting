@@ -7,6 +7,8 @@ from app.repositories.rental_inventory_repository import list_categories, read_a
 FIELDS = (
     'id,group_id,daily_price_1_day,daily_price_2_days,daily_price_3_days,'
     'daily_price_4_days,daily_price_5_days,daily_price_6_days,daily_price_7_plus_days,'
+    'pack_price_1_day,pack_price_2_days,pack_price_3_days,pack_price_4_days,'
+    'pack_price_5_days,pack_price_6_days,pack_price_7_plus_days,'
     'group:material_groups(id,name,is_active,category:material_categories(id,code,name))'
 )
 

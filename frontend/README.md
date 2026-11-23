@@ -369,3 +369,51 @@ Promozioni offre anche «Periodo», con Dal/Al obbligatori e fine non precedente
 all'inizio; nell'elenco compare l'intervallo completo. Il form invia solo il tipo
 di validità scelto, escludendo valori nascosti degli altri tipi. Serve la query
 022_promotions_period.sql; le promozioni restano riservate ai noleggi di un giorno.
+
+Noleggi stagionali richiede `backend/sql/023_seasonal_rentals.sql` e aggiunge:
+
+- Gestione → **Tariffe stagionali** (`/management/tariffe-stagionali`): nome
+  stagione, unica data di consegna e prezzi totali singolo/pack per gruppo,
+  divisi per categoria. «Nuova stagione» conserva le precedenti nell'elenco.
+- Noleggi → **Nuovo noleggio stagionale** (`/operativita/noleggi-stagionali`):
+  cliente, inizio, consegna globale in sola lettura, materiale, riepilogo e
+  pagamento registrato. I pack sono riconosciuti automaticamente quando ci sono
+  sci/snowboard e scarponi compatibili; i bastoncini sono facoltativi e inclusi
+  nel pack sci. Nessuna scelta manuale formula; serve anche la query 024.
+- Noleggi → **Noleggi stagionali** (`/noleggi/stagionali`): selezione stagione,
+  filtri per stato e dettagli con importi, componenti inclusi e pagamenti.
+
+La consegna è la restituzione comune ai nuovi stagionali; le prenotazioni già
+confermate conservano la propria data. Il pack occupa tutti i codici inclusi e
+riusa il flusso di rientro. Le configurazioni iniziali sono vuote, senza prezzi
+dimostrativi. Importi singoli o pack mancanti impediscono la conferma.
+
+Con `backend/sql/025_generic_poles.sql` il codice **1** aggiunge i bastoncini sia
+nei noleggi giornalieri sia negli stagionali. Sono gratuiti con gli sci anche
+senza scarponi e compaiono vicino al relativo pack; da soli usano il prezzo del
+gruppo **Bastoncini generici** nel listino pertinente. Lo stesso codice rimane
+disponibile per altri noleggi e altre sedi. Per il rientro, aprire la scheda della
+prenotazione e «Registra un altro rientro», poi inserire 1; dopo il rientro di un
+codice fisico il modulo usa come contesto la prenotazione appena individuata e
+ne mostra il numero per i bastoncini.
+
+Eseguire anche `backend/sql/026_generic_pole_quantities.sql` per inserire più
+volte 1 nella stessa prenotazione. Ogni inserimento aggiunge una riga distinta
+sia nella selezione sia nel riepilogo; Rimuovi elimina un paio. Il numero totale
+degli articoli include tutte le righe. Un paio per ogni paio di sci è incluso
+nel relativo pack; quelli in eccedenza seguono il listino. Rientri e storico
+conservano le singole righe e i rientri separati.
+
+Tariffe mostra per ogni gruppo sci/snowboard due righe, Singolo e Pack, con le
+stesse sette durate e un solo Salva per gruppo. Le righe dello stesso gruppo sono
+affiancate verticalmente; i gruppi sono separati da una linea viola sottile. Le
+altre categorie mantengono solo il prezzo singolo. Richiede
+`backend/sql/027_daily_pack_rates.sql`; i prezzi esistenti sono conservati e i
+nuovi prezzi pack sono inizialmente vuoti. I pack giornalieri sono calcolati automaticamente; per confermarli serve anche
+`backend/sql/028_apply_daily_packs.sql`.
+
+Nel nuovo noleggio, sci/snowboard con scarponi compatibili diventano un pack
+automaticamente: il riepilogo mostra Pack 1/2 e gli articoli inclusi vicini, con
+prezzo pack giornaliero sull'attrezzo e zero sugli scarponi. Anche lo storico
+conserva questi abbinamenti. Un prezzo pack mancante mantiene il totale non
+confermabile fino alla configurazione e al ricalcolo del listino.

@@ -7,13 +7,13 @@ from app.repositories.rental_inventory_repository import read_all
 from app.repositories.customer_repository import CUSTOMER_FIELDS
 
 HEADER_FIELDS = (
-    'id,booking_number,customer_id,location_id,starts_on,ends_on,status,discount_percent,promotion_id,promotion_name,notes,'
+    'id,booking_number,customer_id,location_id,starts_on,ends_on,status,discount_percent,promotion_id,promotion_name,rental_kind,season_id,notes,'
     f'created_by,created_at,updated_at,customer:customers({CUSTOMER_FIELDS}),'
     'hotel:hotels(id,name)'
 )
 ITEM_FIELDS = (
     'id,booking_id,rental_inventory_id,code_snapshot,brand_snapshot,model_snapshot,size_snapshot,'
-    'daily_price,amount,delivered_at,returned_at,created_at,updated_at'
+    'daily_price,amount,seasonal_pricing,seasonal_pack_main_id,delivered_at,returned_at,created_at,updated_at'
 )
 PAYMENT_FIELDS = 'id,booking_id,payment_method,amount,paid_at,created_by,notes,created_at'
 
@@ -53,10 +53,15 @@ def get_due_headers(client: httpx.Client, location_id: UUID, due_on: date) -> li
     })
 
 
-def register_return(client: httpx.Client, location_id: UUID, request_id: UUID, code: str) -> dict:
-    response = client.post('/rest/v1/rpc/skirenting_register_rental_return', json={
+def register_return(client: httpx.Client, location_id: UUID, request_id: UUID, code: str, booking_id: UUID | None = None) -> dict:
+    payload = {
         'p_location_id': str(location_id), 'p_request_id': str(request_id), 'p_code': code,
-    })
+    }
+    function = 'skirenting_register_rental_return'
+    if code == '1':
+        function = 'skirenting_register_generic_return'
+        payload['p_booking_id'] = str(booking_id) if booking_id else None
+    response = client.post(f'/rest/v1/rpc/{function}', json=payload)
     response.raise_for_status()
     return response.json()
 

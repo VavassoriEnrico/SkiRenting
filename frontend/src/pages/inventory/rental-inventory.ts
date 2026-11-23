@@ -14,6 +14,8 @@ export type RentalVariant = {
   accessory_details: { size_label: string | null } | null;
 };
 export type RentalItem = {
+  is_generic?: boolean;
+  quantity?: number;
   open_repair?: OpenRepair | null;
   id: string; code: string; serial_number: string | null;
   purchase_price?: number | null; legacy_sold_price?: number | null;

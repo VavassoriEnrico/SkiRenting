@@ -448,3 +448,58 @@ Da 022, le promozioni accettano anche starts_on/ends_on: entrambe obbligatorie
 per il periodo, ordinate ed alternative a promotion_date e weekdays. L'API legge
 e restituisce i due campi e la conferma SQL applica il periodo con estremi inclusi,
 solo per noleggi giornalieri e senza cumulo. La query 022 include la conferma 021.
+
+## Noleggi stagionali (023)
+
+Eseguire `sql/023_seasonal_rentals.sql`. Configurazione condivisa con JWT operatore:
+
+- `GET/POST /api/v1/seasonal-rentals/settings`: stagioni, stagione corrente e data
+  globale di restituzione; il POST crea o aggiorna la stagione rendendola corrente.
+- `GET /api/v1/seasonal-rates` e `PATCH /api/v1/seasonal-rates/{id}`: prezzi totali
+  singolo/pack per gruppo; pack ammesso solo per sci/snowboard.
+- `POST /api/v1/locations/{id}/seasonal-quote`: season_id, starts_on, inventory_ids.
+- `POST /api/v1/locations/{id}/seasonal-bookings`: stessi dati più booking_id,
+  customer_id, expected_return_date, expected_total, payment opzionale e notes.
+- `GET /api/v1/locations/{id}/seasonal-bookings?season_id=UUID`: elenco della sede
+  per stagione, con pagamenti e stato dei rientri.
+
+Il database riconosce automaticamente i pack completi nell'ordine dei codici
+inseriti: attrezzo e scarponi compatibili, senza riutilizzo. Eseguire anche
+`sql/024_seasonal_automatic_packs.sql` sui database già configurati: i bastoncini
+sono facoltativi e inclusi solo nel pack sci. Gli esemplari sono prenotati separatamente, con prezzo pack sull'attrezzo e zero sui
+componenti inclusi. Le tariffe mancanti bloccano la conferma. Le date e gli importi
+salvati restano invariati se si modifica la configurazione. Disponibilità, rientri,
+storico clienti e pagamenti usano le tabelle esistenti; i noleggi giornalieri
+mantengono il proprio listino e gli sconti esistenti.
+
+La query `sql/025_generic_poles.sql` aggiunge il codice generico `1`, disponibile
+in tutte le sedi e riutilizzabile tra noleggi giornalieri e stagionali. Con gli
+sci è gratuito anche senza scarponi; da solo usa le tariffe del nuovo gruppo
+«Bastoncini generici». L'API inventario include la voce globale solo nella scelta
+del materiale disponibile, escludendola dal blocco per occupazione e dai conteggi
+fisici del magazzino. I prezzi sono verificati anche in conferma SQL. Per il
+rientro di `1`, POST rental-returns richiede booking_id oltre a code/request_id,
+così ogni prenotazione conserva il proprio rientro indipendente e idempotente.
+
+Da `026_generic_pole_quantities.sql`, preventivo e conferma accettano
+`pole_quantity` (intero 1–1000, valore predefinito 1), ammesso oltre 1 solo con
+la voce generica selezionata. Espandono ogni paio in una riga distinta; un paio
+per ogni sci è incluso, gli altri sono a tariffa. Le righe generiche possono
+ripetere lo stesso rental_inventory_id nella prenotazione, mentre gli esemplari
+fisici mantengono un indice univoco. Il rientro generico restituisce una riga per
+request_id, con idempotenza anche quando il codice compare più volte.
+
+`027_daily_pack_rates.sql` aggiunge sette prezzi pack giornalieri a rental_rates.
+GET/PATCH rental-rates li legge e salva con le stesse validazioni dei singoli;
+omettere i campi pack mantiene i valori salvati. Le sette colonne dei singoli
+rimangono obbligatorie nel PATCH. I prezzi pack sono ammessi solo per gruppi sci
+e snowboard, con controllo anche nel database. Il preventivo le applica automaticamente; per allineare la conferma atomica
+eseguire anche `028_apply_daily_packs.sql`.
+
+Con 028, i pack giornalieri vengono riconosciuti automaticamente sia nel
+preventivo Python sia nella conferma SQL, con la stessa scelta di categoria e
+ordine: sci/ski_boots oppure snowboard/snowboard_boots, ogni scarpone usato una
+sola volta. Il prezzo pack dipende dal gruppo dell'attrezzo e dalla durata. Le
+righe salvano formula e riferimento al pack nei campi già disponibili; gli
+scarponi inclusi hanno prezzo zero, senza richiedere la loro tariffa singola.
+Gli sconti si applicano dopo il calcolo del subtotale completo.

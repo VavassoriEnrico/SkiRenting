@@ -171,13 +171,15 @@ describe('Storico reale di tutti i noleggi', () => {
 it('separates current rentals from history, including all-returned unpaid bookings in history', async () => {
   const unpaid={...booking,id:'unpaid',booking_number:127,returned_item_count:1,customer:{...booking.customer,first_name:'Luca',last_name:'Verdi'}};
   const cancelled={...booking,id:'cancelled',booking_number:128,status:'cancelled',customer:{...booking.customer,first_name:'Paolo',last_name:'Neri'}};
-  mocks.get.mockResolvedValue([booking,second,unpaid,cancelled]);
+  const seasonal={...booking,id:'seasonal',rental_kind:'seasonal',customer:{...booking.customer,first_name:'Stagionale',last_name:'Test'}};
+  mocks.get.mockResolvedValue([booking,second,unpaid,cancelled,seasonal]);
   const view=render(<RentalsPage view="current" />);
   await screen.findByText('Mario Rossi');
   expect(screen.getByRole('heading',{name:'Noleggi attuali'})).toBeTruthy();
   expect(screen.queryByText('Anna Bianchi')).toBeNull();
   expect(screen.queryByText('Luca Verdi')).toBeNull();
   expect(screen.queryByText('Paolo Neri')).toBeNull();
+  expect(screen.queryByText('Stagionale Test')).toBeNull();
   expect(within(screen.getByLabelText('Stato noleggio')).queryByRole('option',{name:'Concluso'})).toBeNull();
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'nessun cliente'}});
   view.rerender(<RentalsPage view="history" />);
@@ -185,7 +187,39 @@ it('separates current rentals from history, including all-returned unpaid bookin
   expect(screen.getByText('Luca Verdi')).toBeTruthy();
   expect(screen.getByText('Paolo Neri')).toBeTruthy();
   expect(screen.queryByText('Mario Rossi')).toBeNull();
+  expect(screen.queryByText('Stagionale Test')).toBeNull();
   expect(screen.getByRole('heading',{name:'Storico noleggi'})).toBeTruthy();
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
   expect(within(screen.getByLabelText('Stato noleggio')).queryByRole('option',{name:'Prenotato'})).toBeNull();
+});
+
+it('separates seasonal current bookings and history including completed unpaid bookings',async()=>{
+  const current={...booking,rental_kind:'seasonal'};
+  const completed={...second,rental_kind:'seasonal'};
+  const unpaid={...booking,id:'unpaid-seasonal',booking_number:130,rental_kind:'seasonal',returned_item_count:1,
+    customer:{...booking.customer,first_name:'Luca',last_name:'Verdi'}};
+  mocks.get.mockResolvedValue([current,completed,unpaid]);
+  const page=render(<RentalsPage view="current" seasonId="season" seasonName="2026/2027"/>);
+  await screen.findByText('Mario Rossi');
+  expect(screen.getByRole('heading',{name:'Noleggi stagionali attuali'})).toBeTruthy();
+  expect(screen.queryByText('Anna Bianchi')).toBeNull();
+  expect(screen.queryByText('Luca Verdi')).toBeNull();
+  expect(mocks.get).toHaveBeenCalledWith('/locations/site-a/seasonal-bookings?season_id=season','token',expect.any(AbortSignal));
+  page.rerender(<RentalsPage view="history" seasonId="season" seasonName="2026/2027"/>);
+  await screen.findByText('Anna Bianchi');
+  expect(screen.getByText('Luca Verdi')).toBeTruthy();
+  expect(screen.queryByText('Mario Rossi')).toBeNull();
+  expect(screen.getByRole('heading',{name:'Storico noleggi stagionali'})).toBeTruthy();
+});
+
+
+it.each([
+  ['daily','single','Singolo'],['daily','pack','Pack'],['daily','mixed','Pack + singoli'],
+  ['seasonal','single','Singolo'],['seasonal','pack','Pack'],['seasonal','mixed','Pack + singoli'],
+] as const)('shows the formula column for current %s rentals (%s)',async(kind,formula,label)=>{
+  mocks.get.mockResolvedValue([{...booking,rental_kind:kind,rental_formula:formula}]);
+  render(<RentalsPage view="current" seasonId={kind==='seasonal'?'season':undefined} seasonName="2026/2027"/>);
+  await screen.findByText('Mario Rossi');
+  expect(screen.getByRole('columnheader',{name:'Formula'})).toBeTruthy();
+  expect(screen.getByRole('cell',{name:label})).toBeTruthy();
 });

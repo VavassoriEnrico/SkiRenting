@@ -1,10 +1,10 @@
 import { ArrowLeft, Coins, Save } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { apiGet, apiPatch } from '../../lib/api';
-import { draftFromRate, pricesFromDraft, rateColumns } from './rental-rates';
+import { draftFromRate, pricesFromDraft, rateColumns, packRateColumns, hasPackRates } from './rental-rates';
 import type { RateDraft, RateKey, RentalRate, RentalRateList } from './rental-rates';
 
 export function RentalRatesPage() {
@@ -45,6 +45,7 @@ function RentalRatesList({ token }: { token: string }) {
     || a.name.localeCompare(b.name, 'it')
   ));
   const currentCategory = categories.find((entry) => entry.id === category) || categories[0];
+  const showPack = hasPackRates(currentCategory?.code || '');
   const rows = (data?.rates || []).filter((rate) => rate.group.category.id === currentCategory?.id).sort((a, b) => a.group.name.localeCompare(b.group.name, 'it'));
 
   function changePrice(id: string, key: RateKey, value: string) {
@@ -54,7 +55,7 @@ function RentalRatesList({ token }: { token: string }) {
 
   async function save(rate: RentalRate) {
     if (saving.current) return;
-    const prices = pricesFromDraft(drafts[rate.id]);
+    const prices = pricesFromDraft(drafts[rate.id],hasPackRates(rate.group.category.code));
     if (Object.values(prices).some((value) => value !== null && (!Number.isFinite(value) || value < 0 || value > 9999999999.99))) {
       setError('Inserisci prezzi validi, maggiori o uguali a zero.'); return;
     }
@@ -84,19 +85,24 @@ function RentalRatesList({ token }: { token: string }) {
         {categories.map((entry) => <button className={`category-filter${entry.id === currentCategory?.id ? ' is-selected' : ''}`} type="button" key={entry.id} disabled={!!savingId} aria-pressed={entry.id === currentCategory?.id} onClick={() => { setCategory(entry.id); setSuccess(''); }}>{entry.name}<span>{data.rates.filter((rate) => rate.group.category.id === entry.id).length}</span></button>)}
       </div></section>
       <section className="rentals-panel" aria-labelledby="rates-list-title"><div className="rentals-panel-heading"><h2 id="rates-list-title">{currentCategory?.name || 'Tariffe'}</h2><span className="rentals-count">{rows.length} gruppi</span></div>
-        <div className="rentals-table-scroll" role="region" aria-label="Prezzi giornalieri per gruppo" tabIndex={0}><table className="rentals-table rates-table"><caption className="sr-only">Prezzo giornaliero per gruppo e durata del noleggio</caption><thead><tr><th scope="col">Gruppo</th>{rateColumns.map((column) => <th key={column.key} scope="col">{column.label}<span className="rental-secondary">€/giorno</span></th>)}<th scope="col">Salva</th></tr></thead><tbody>
+        <div className="rentals-table-scroll" role="region" aria-label="Prezzi giornalieri per gruppo" tabIndex={0}><table className="rentals-table rates-table"><caption className="sr-only">Prezzo giornaliero per gruppo e durata del noleggio</caption><thead><tr><th scope="col">Gruppo</th>{showPack&&<th scope="col">Formula</th>}{rateColumns.map((column) => <th key={column.key} scope="col">{column.label}<span className="rental-secondary">€/giorno</span></th>)}<th scope="col">Salva</th></tr></thead><tbody>
           {rows.map((rate) => {
             const draft = drafts[rate.id];
-            const prices = pricesFromDraft(draft);
-            const dirty = rateColumns.some(({ key }) => prices[key] !== rate[key]);
-            const configured = rateColumns.filter(({ key }) => rate[key] !== null).length;
-            return <tr key={rate.id}><th scope="row"><span className="rental-primary">{rate.group.name}</span><span className="rental-secondary">{configured}/7 tariffe configurate</span></th>
-              {rateColumns.map((column) => <td key={column.key}><label className="sr-only" htmlFor={`${rate.id}-${column.key}`}>{rate.group.name} · {column.label} (€/giorno)</label><input className="rate-price-input" id={`${rate.id}-${column.key}`} form={`rate-form-${rate.id}`} type="number" min="0" max="9999999999.99" step="0.01" placeholder="Da configurare" value={draft[column.key]} disabled={!!savingId} onChange={(event) => changePrice(rate.id, column.key, event.target.value)} /></td>)}
-              <td><form id={`rate-form-${rate.id}`} onSubmit={(event) => { event.preventDefault(); void save(rate); }}><button className="sales-button" type="submit" disabled={!!savingId || !dirty} aria-label={`Salva tariffe ${rate.group.name}`}><Save size={15} aria-hidden="true" />{savingId === rate.id ? 'Salvataggio…' : 'Salva'}</button></form></td></tr>;
+            const prices = pricesFromDraft(draft,showPack);
+            const columns = showPack?[...rateColumns,...packRateColumns]:rateColumns;
+            const dirty = columns.some(({ key }) => prices[key] !== (rate[key]??null));
+            const configured = columns.filter(({ key }) => rate[key] != null).length;
+            const formulas = showPack?[{label:'Singolo',columns:rateColumns},{label:'Pack',columns:packRateColumns}]:[{label:'Singolo',columns:rateColumns}];
+            return <Fragment key={rate.id}><tr className="rate-group-divider" aria-hidden="true"><td colSpan={showPack?10:9}><div /></td></tr>{formulas.map((formula,index)=><tr key={formula.label} className={index===0?'rate-group-start':'rate-pack-row'}>
+              {index===0&&<th scope="rowgroup" rowSpan={formulas.length}><span className="rental-primary">{rate.group.name}</span><span className="rental-secondary">{configured}/{columns.length} tariffe configurate</span></th>}
+              {showPack&&<th scope="row" className="rate-formula">{formula.label}</th>}
+              {formula.columns.map((column) => <td key={column.key}><label className="sr-only" htmlFor={`${rate.id}-${column.key}`}>{rate.group.name} · {formula.label==='Pack'?'Pack · ':''}{column.label} (€/giorno)</label><input className="rate-price-input" id={`${rate.id}-${column.key}`} form={`rate-form-${rate.id}`} type="number" min="0" max="9999999999.99" step="0.01" placeholder="Da configurare" value={draft[column.key]} disabled={!!savingId} onChange={(event) => changePrice(rate.id, column.key, event.target.value)} /></td>)}
+              {index===0&&<td rowSpan={formulas.length}><form id={`rate-form-${rate.id}`} onSubmit={(event) => { event.preventDefault(); void save(rate); }}><button className="sales-button" type="submit" disabled={!!savingId || !dirty} aria-label={`Salva tariffe ${rate.group.name}`}><Save size={15} aria-hidden="true" />{savingId === rate.id ? 'Salvataggio…' : 'Salva'}</button></form></td>}
+            </tr>)}</Fragment>;
           })}
-          {rows.length === 0 && <tr><td colSpan={9}><div className="rentals-empty">Nessun gruppo tariffario per questo tipo di materiale.</div></td></tr>}
+          {rows.length === 0 && <tr><td colSpan={showPack?10:9}><div className="rentals-empty">Nessun gruppo tariffario per questo tipo di materiale.</div></td></tr>}
         </tbody></table></div>
-        <p className="rentals-panel-footer">Salva ogni gruppo dopo le modifiche. I prezzi confermati nei noleggi restano nello storico; questo listino verrà collegato al calcolo del nuovo noleggio.</p>
+        <p className="rentals-panel-footer">Per sci e snowboard imposta il prezzo al giorno del singolo e del pack con scarponi compatibili. Salva ogni gruppo dopo le modifiche. Il gruppo Bastoncini generici imposta il prezzo del codice 1 noleggiato da solo; con gli sci è gratuito. I prezzi confermati nei noleggi restano nello storico.</p>
       </section>
     </>}
   </div>;

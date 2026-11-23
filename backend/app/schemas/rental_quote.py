@@ -11,6 +11,7 @@ class RentalQuoteRequest(BaseModel):
     ends_on: date
     inventory_ids: list[UUID] = Field(min_length=1)
     hotel_id: UUID | None = None
+    pole_quantity: int = Field(default=1, ge=1, le=1000, strict=True)
 
     @model_validator(mode='after')
     def validate_selection(self):
@@ -22,6 +23,9 @@ class RentalQuoteRequest(BaseModel):
 
 
 class QuoteItem(BaseModel):
+    line_key: str | None = None
+    price_mode: str = 'single'
+    pack_main_id: UUID | None = None
     inventory_id: UUID
     code: str
     brand: str

@@ -14,6 +14,8 @@ from app.services.operator_service import get_authorized_location
 def confirm_booking(client: httpx.Client, user_id: UUID, location_id: UUID, data: RentalBookingCreate):
     get_authorized_location(client, user_id, location_id)
     payload = data.model_dump(mode='json', exclude={'booking_id'})
+    if data.pole_quantity == 1:
+        payload.pop('pole_quantity')
     # Mantiene identici i ritentativi delle conferme precedenti a questo campo.
     if payload['notes'] is None:
         payload.pop('notes')

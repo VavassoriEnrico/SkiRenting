@@ -50,6 +50,42 @@ def api(monkeypatch):
                     if requested_id is None or requested_id == f"eq.{identifier}"
                 ],
             )
+        if request.url.path in ('/rest/v1/rental_seasons','/rest/v1/seasonal_rates'):
+            if state.get('seasonal_error'):
+                return httpx.Response(400,json={'code':state['seasonal_error'],'message':'Stagionali non disponibili'})
+            key='seasons' if request.url.path.endswith('/rental_seasons') else 'seasonal_rates'
+            rows=state.setdefault(key,[])
+            if request.method=='PATCH':
+                assert key=='seasonal_rates'
+                data=json.loads(request.content)
+                assert set(data)=={'single_price','pack_price'}
+                selected=[row for row in rows if request.url.params['id']==f"eq.{row['id']}"]
+                for row in selected: row.update(data)
+                return httpx.Response(200,json=selected)
+            assert request.method=='GET'
+            offset=int(request.url.params['offset'])
+            return httpx.Response(200,json=rows[offset:offset+300])
+        if request.url.path=='/rest/v1/rpc/skirenting_save_rental_season':
+            data=json.loads(request.content)
+            state['season_payload']=data
+            if state.get('seasonal_error'):
+                return httpx.Response(400,json={'code':state['seasonal_error'],'message':'Stagione non valida'})
+            seasons=state.setdefault('seasons',[])
+            row={'id':data['p_id'] or USER_ID,'name':data['p_name'],'return_date':data['p_return_date'],'is_current':True,'created_at':'2026-11-23T10:00:00Z'}
+            for existing in seasons: existing['is_current']=False
+            seasons[:]=[entry for entry in seasons if entry['id']!=row['id']]+[row]
+            return httpx.Response(200,json=row)
+        if request.url.path in ('/rest/v1/rpc/skirenting_seasonal_quote','/rest/v1/rpc/skirenting_confirm_seasonal_rental'):
+            data=json.loads(request.content)
+            assert data['p_location_id']==LOCATION_A
+            state['seasonal_payload']=data
+            if state.get('seasonal_error'):
+                return httpx.Response(400,json={'code':state['seasonal_error'],'message':'Prezzi stagionali cambiati'})
+            if request.url.path.endswith('quote'):
+                return httpx.Response(200,json=state['seasonal_quote'])
+            payload=data['p_data']
+            return httpx.Response(200,json={'id':data['p_booking_id'],'booking_number':130,'starts_on':payload['starts_on'],
+                'ends_on':payload['expected_return_date'],'status':'confirmed','total':'150','paid_amount':'0','balance':'150','rental_kind':'seasonal'})
         if request.url.path == "/rest/v1/rental_bookings":
             assert request.method == "GET"
             if 'customer_id' in request.url.params:
@@ -63,6 +99,9 @@ def api(monkeypatch):
             if state.get("history_error"):
                 return httpx.Response(400, json={"code": state["history_error"]})
             rows = state.get("bookings", [])
+            if 'rental_kind' in request.url.params:
+                assert request.url.params['rental_kind']=='eq.seasonal'
+                rows=[row for row in rows if row.get('rental_kind')=='seasonal' and request.url.params['season_id']==f"eq.{row.get('season_id')}"]
             if 'customer_id' in request.url.params:
                 rows = [r for r in rows if r['location_id'] in allowed_ids and request.url.params['customer_id'] == f"eq.{r['customer_id']}"]
                 rows = sorted(rows,key=lambda r:(r['starts_on'],r['ends_on'],r['booking_number'],r['id']),reverse=True)
@@ -112,7 +151,7 @@ def api(monkeypatch):
             if state.get('payment_error'):
                 return httpx.Response(400, json={'code': state['payment_error'], 'message': 'Saldo già registrato'})
             return httpx.Response(200, json={'booking_id': data['p_booking_id']})
-        if request.url.path == '/rest/v1/rpc/skirenting_register_rental_return':
+        if request.url.path in ('/rest/v1/rpc/skirenting_register_rental_return','/rest/v1/rpc/skirenting_register_generic_return'):
             data = json.loads(request.content)
             assert data['p_location_id'] == LOCATION_A
             state['return_payload'] = data
@@ -323,14 +362,15 @@ def api(monkeypatch):
             offset = int(request.url.params['offset'])
             return httpx.Response(200, json=rows[offset:offset + 300])
         if request.url.path == "/rest/v1/rental_inventory":
-            location_filter = request.url.params["location_id"]
+            generic = request.url.params.get("is_generic") == "eq.true"
+            location_filter = request.url.params.get("location_id", "")
             general = location_filter.startswith('in.(')
             if general:
                 allowed = location_filter[4:-1].split(',')
                 assert set(allowed) == set(state['locations'])
                 assert 'location:locations(id,name)' in request.url.params['select']
                 assert request.method == 'GET'
-            else:
+            elif not generic:
                 assert location_filter == f"eq.{LOCATION_A}"
             assert request.url.params["order"] == "id"
             if state.get("inventory_unavailable"):
@@ -338,7 +378,7 @@ def api(monkeypatch):
             offset = int(request.url.params["offset"])
             # Simulate a configured Supabase cap smaller than the requested page.
             page_size = min(int(request.url.params["limit"]), 300)
-            rows = state.get("items", [])
+            rows = [row for row in state.get("items", []) if bool(row.get("is_generic")) == generic]
             if general:
                 rows = [row for row in rows if row['location']['id'] in allowed]
             if "id" in request.url.params:
@@ -1834,3 +1874,135 @@ def test_quote_accepts_period_promotion_and_compares_it_with_date_weekly_and_hot
     assert response.status_code==200
     assert response.json()['total']=='15.00'
     assert response.json()['promotion']['name']=='Dicembre'
+
+
+
+def test_seasonal_settings_rates_and_quote_api(api):
+    client,state=api
+    assert client.get('/api/v1/seasonal-rentals/settings',headers=HEADERS).json()=={'seasons':[],'current_season':None}
+    response=client.post('/api/v1/seasonal-rentals/settings',headers=HEADERS,json={'name':'2026/2027','return_date':'2027-04-30'})
+    assert response.status_code==200
+    season=response.json()
+    assert client.get('/api/v1/seasonal-rentals/settings',headers=HEADERS).json()['current_season']==season
+    state['seasonal_rates']=[{'id':LOCATION_A,'group_id':LOCATION_A,'single_price':None,'pack_price':None,'group':rate_row()['group']}]
+    assert client.get('/api/v1/seasonal-rates',headers=HEADERS).json()['rates'][0]['single_price'] is None
+    response=client.patch(f'/api/v1/seasonal-rates/{LOCATION_A}',headers=HEADERS,json={'single_price':100,'pack_price':150})
+    assert response.status_code==200 and response.json()['pack_price']==150
+    item=rental_item(0)
+    state['seasonal_quote']={'season':season,'bundles':[],'starts_on':'2026-12-01','ends_on':'2027-04-30','days':151,
+        'items':[{'inventory_id':item['id'],'code':item['code'],'brand':'Marca','model':'Modello','group_name':'RACE','daily_price':None,'amount':100,'price_mode':'single','pack_main_id':None}],
+        'hotel':None,'discount_percent':0,'subtotal':100,'discount_amount':0,'total':100,'missing_rate_codes':[]}
+    request={'season_id':season['id'],'starts_on':'2026-12-01','inventory_ids':[item['id']]}
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/seasonal-quote',headers=HEADERS,json=request)
+    assert response.status_code==200
+    assert response.json()['total']=='100' and response.json()['items'][0]['daily_price'] is None
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/seasonal-bookings',headers=HEADERS,json={**request,'booking_id':USER_ID,'customer_id':USER_ID,'expected_return_date':'2027-04-30','expected_total':'150','payment':None})
+    assert response.status_code==201 and response.json()['rental_kind']=='seasonal'
+    assert 'ends_on' not in state['seasonal_payload']['p_data']
+    assert 'bundles' not in state['seasonal_payload']['p_data']
+
+
+def test_seasonal_api_authorization_automatic_pack_and_missing_migration(api):
+    client,state=api
+    path=f'/api/v1/locations/{LOCATION_A}/seasonal-quote'
+    request={'season_id':USER_ID,'starts_on':'2026-12-01','inventory_ids':[USER_ID,LOCATION_A,LOCATION_B]}
+    assert client.get('/api/v1/seasonal-rates').status_code==401
+    assert client.post(path,json=request).status_code==401
+    assert not state['requests']
+    bundle={'main_id':USER_ID,'boot_id':LOCATION_A,'pole_id':LOCATION_B}
+    assert client.post(path,headers=HEADERS,json={**request,'bundles':[bundle,bundle]}).status_code==422
+    assert client.post(path,headers=HEADERS,json={**request,'ends_on':'2027-04-30'}).status_code==422
+    assert client.post(f'/api/v1/locations/{UNASSIGNED_LOCATION}/seasonal-quote',headers=HEADERS,json=request).status_code==403
+    state['seasonal_error']='PGRST202'
+    response=client.post(path,headers=HEADERS,json=request)
+    assert response.status_code==503 and '023_seasonal_rentals.sql' in response.json()['detail']
+
+
+def test_seasonal_list_is_scoped_to_site_and_season(api):
+    client,state=api
+    state['bookings']=[{**history_header(),'rental_kind':'seasonal','season_id':USER_ID},
+                       {**history_header(2),'rental_kind':'seasonal','season_id':LOCATION_B},history_header(3)]
+    response=client.get(f'/api/v1/locations/{LOCATION_A}/seasonal-bookings?season_id={USER_ID}',headers=HEADERS)
+    assert response.status_code==200
+    assert len(response.json())==1
+    assert response.json()[0]['rental_kind']=='seasonal'
+    assert client.get(f'/api/v1/locations/{UNASSIGNED_LOCATION}/seasonal-bookings?season_id={USER_ID}',headers=HEADERS).status_code==403
+
+
+def test_generic_poles_are_selectable_and_not_blocked_by_existing_rentals(api):
+    client,state=api
+    physical=rental_item(0)
+    generic={**rental_item(1),'code':'1','is_generic':True,
+             'variant':{**physical['variant'],'category':{'id':LOCATION_B,'code':'poles','name':'Bastoncini'}}}
+    state['items']=[physical,generic]
+    state['availability_items']=[{'id':USER_ID,'rental_inventory_id':generic['id'],'delivered_at':None,'returned_at':None,
+        'booking':{'status':'active','starts_on':'2026-01-01','ends_on':'2028-01-01'}}]
+    response=client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory?available_only=true',headers=HEADERS)
+    assert response.status_code==200
+    assert next(item for item in response.json()['items'] if item['code']=='1')['is_generic'] is True
+
+
+def test_generic_poles_return_passes_explicit_booking_context(api):
+    client,state=api
+    header=history_header()
+    state['bookings']=[header]
+    state['history_items'],state['history_payments']=history_children(header['id'])
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-returns',headers=HEADERS,
+                        json={'request_id':USER_ID,'code':'1','booking_id':header['id']})
+    assert response.status_code==200
+    assert state['return_payload']['p_booking_id']==header['id']
+    assert any(request.url.path.endswith('/skirenting_register_generic_return') for request in state['requests'])
+
+
+def test_daily_pack_rate_api_reads_saves_and_preserves_omitted_pack_prices(api):
+    client,state=api
+    row={**rate_row(),'pack_price_1_day':30,'pack_price_7_plus_days':20}
+    state['rates']=[row]
+    response=client.get('/api/v1/rental-rates',headers=HEADERS)
+    assert response.status_code==200
+    assert response.json()['rates'][0]['pack_price_1_day']==30
+    path=f"/api/v1/rental-rates/{row['id']}"
+    response=client.patch(path,headers=HEADERS,json={**RATE_PRICES,'daily_price_1_day':21})
+    assert response.status_code==200 and response.json()['pack_price_1_day']==30
+    response=client.patch(path,headers=HEADERS,json={**RATE_PRICES,'pack_price_1_day':0,'pack_price_7_plus_days':None})
+    assert response.status_code==200 and response.json()['pack_price_1_day']==0
+    assert response.json()['pack_price_7_plus_days'] is None
+    assert response.json()['daily_price_1_day']==20
+    assert client.patch(path,headers=HEADERS,json={**RATE_PRICES,'pack_price_1_day':-1}).status_code==422
+
+
+
+def test_daily_quote_api_returns_automatic_pack_from_main_group_tariff(api):
+    client,state=api
+    main=rental_item(0)
+    boot={**rental_item(1),'code':'BOOT','variant':{**main['variant'],'category':{'id':LOCATION_B,'code':'ski_boots','name':'Scarponi sci'}}}
+    state['items']=[main,boot]
+    state['rates']=[{**rate_row(),'pack_price_3_days':25}]
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-quote',headers=HEADERS,
+        json={'starts_on':'2026-12-01','ends_on':'2026-12-03','inventory_ids':[main['id'],boot['id']]})
+    assert response.status_code==200
+    quote=response.json()
+    assert quote['total']=='75.00'
+    assert quote['items'][0]['price_mode']=='pack' and quote['items'][0]['daily_price']=='25'
+    assert quote['items'][1]['price_mode']=='included' and quote['items'][1]['amount']=='0'
+    assert quote['items'][1]['pack_main_id']==main['id']
+
+
+@pytest.mark.parametrize('kind',['daily','seasonal'])
+@pytest.mark.parametrize('formula',['single','pack','mixed','poles_pack'])
+def test_booking_lists_expose_formula_from_saved_pack_rows(api,kind,formula):
+    client,state=api
+    header={**history_header(),'rental_kind':kind,'season_id':USER_ID if kind=='seasonal' else None}
+    state['bookings']=[header]
+    items,payments=history_children(header['id'])
+    if formula!='single':
+        items[0].update(seasonal_pricing='single' if formula=='poles_pack' else 'pack',seasonal_pack_main_id=USER_ID)
+        items[1].update(seasonal_pricing='included',seasonal_pack_main_id=USER_ID,amount=0)
+        if formula=='mixed':
+            items.append({**items[1],'id':LOCATION_B,'seasonal_pricing':'single','seasonal_pack_main_id':None,'amount':10})
+    state['history_items']=items
+    state['history_payments']=payments
+    path=f'/api/v1/locations/{LOCATION_A}/'+(f'seasonal-bookings?season_id={USER_ID}' if kind=='seasonal' else 'rental-bookings?scope=all')
+    response=client.get(path,headers=HEADERS)
+    assert response.status_code==200
+    assert response.json()[0]['rental_formula']==('pack' if formula=='poles_pack' else formula)

@@ -7,15 +7,16 @@ export const historyStatuses = {
 export type HistoryDisplayStatus = keyof typeof historyStatuses;
 export type HistoryStatus = Exclude<HistoryDisplayStatus, 'awaiting_payment'>;
 export type HistoryBooking = {
-  id: string; booking_number: number; customer_id: string; location_id: string;
+  id: string; rental_kind?:'daily'|'seasonal'; season_id?:string|null; booking_number: number; customer_id: string; location_id: string;
   customer: Customer; hotel: { id: string; name: string } | null;
   starts_on: string; ends_on: string; status: HistoryStatus; discount_percent: string;
   promotion_id?: string | null; promotion_name?: string | null; notes: string | null; created_by: string; created_at: string; updated_at: string;
   item_count: number; returned_item_count: number; subtotal: string; discount_amount: string; total: string; paid_amount: string; balance: string;
+  rental_formula?: 'single'|'pack'|'mixed';
 };
 export type HistoryDetails = HistoryBooking & {
   items: { id: string; rental_inventory_id: string; code_snapshot: string; brand_snapshot: string;
-    model_snapshot: string; size_snapshot: string | null; daily_price: string | null; amount: string;
+    model_snapshot: string; size_snapshot: string | null; daily_price: string | null; amount: string; seasonal_pricing?:'single'|'pack'|'included'|null; seasonal_pack_main_id?:string|null;
     delivered_at: string | null; returned_at: string | null; created_at: string; updated_at: string }[];
   payments: { id: string; payment_method: string; amount: string; paid_at: string; created_by: string;
     notes: string | null; created_at: string }[];

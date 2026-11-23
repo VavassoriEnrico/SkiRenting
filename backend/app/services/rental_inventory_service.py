@@ -32,6 +32,7 @@ def get_inventory(
         summary = None
         today = datetime.now(ZoneInfo('Europe/Rome')).date()
         if available_only:
+            items += rental_inventory_repository.list_generic_items(client)
             blocked = rental_inventory_repository.unavailable_item_ids(client, items, starts_on or today, ends_on or today)
             items = [item for item in items if item['id'] not in blocked]
             repairs = material_repair_repository.open_for_items(client,items)

@@ -41,7 +41,7 @@ export function Sidebar({ collapsed = false, onNavigate }: SidebarProps) {
                 <NavLink
                   key={href}
                   to={href}
-                  end={href === '/noleggi'}
+                  end={href === '/noleggi' || href === '/noleggi/stagionali'}
                   onClick={onNavigate}
                   title={collapsed ? `${section.label} · ${label}` : undefined}
                   aria-label={collapsed ? `${section.label} · ${label}` : undefined}

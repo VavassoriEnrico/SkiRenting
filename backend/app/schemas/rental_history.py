@@ -22,6 +22,8 @@ class HistoryBookingRead(BaseModel):
     ends_on: date
     status: BookingStatus
     discount_percent: Decimal
+    rental_kind: Literal['daily','seasonal'] = 'daily'
+    season_id: UUID | None = None
     promotion_id: UUID | None = None
     promotion_name: str | None = None
     notes: str | None = None
@@ -29,6 +31,7 @@ class HistoryBookingRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     item_count: int
+    rental_formula: Literal['single','pack','mixed'] = 'single'
     returned_item_count: int
     subtotal: Decimal
     discount_amount: Decimal
@@ -44,6 +47,8 @@ class HistoryItemRead(BaseModel):
     brand_snapshot: str
     model_snapshot: str
     size_snapshot: str | None = None
+    seasonal_pricing: Literal['single','pack','included'] | None = None
+    seasonal_pack_main_id: UUID | None = None
     daily_price: Decimal | None = None
     amount: Decimal
     delivered_at: datetime | None = None
@@ -70,6 +75,7 @@ class HistoryBookingDetails(HistoryBookingRead):
 class RentalReturnCreate(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     request_id: UUID
+    booking_id: UUID | None = None
     code: str = Field(min_length=1, max_length=200)
 
 

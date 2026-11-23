@@ -418,8 +418,8 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .customers-table .customer-notes { min-width: 200px; max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .customers-table .customer-email { max-width: 280px; white-space: normal; overflow-wrap: anywhere; }
 .management-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 20px; }
-.management-card { display: block; padding: 26px; border: 1px solid #dddff0; border-radius: 18px; background: white; color: #252c45; text-decoration: none; }
-.management-card:hover { border-color: #a5b4fc; box-shadow: 0 8px 28px rgb(79 70 229 / 8%); }
+.management-card { display: block; padding: 26px; border: 1px solid #7c3aed; border-radius: 18px; background: white; color: #252c45; text-decoration: none; }
+.management-card:hover { border-color: #6d28d9; box-shadow: 0 8px 28px rgb(79 70 229 / 8%); }
 .management-card-icon { display: inline-flex; padding: 14px; border-radius: 14px; color: #4f46e5; background: #eef2ff; }
 .management-card h2 { font-size: 19px; margin: 20px 0 10px; }
 .management-card p { font-size: 13px; color: #64748b; line-height: 1.7; }
@@ -430,6 +430,10 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .hotel-discount-editor input:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
 .rates-table { min-width: 1220px; }
 .rates-table th:first-child { min-width: 180px; }
+.rates-table .rate-formula { color: #7c3aed; white-space: nowrap; }
+.rates-table tbody .rate-group-divider > td { padding: 10px 20px; border: 0; background: white; }
+.rates-table .rate-group-divider > td > div { height: 2px; background: #7c3aed; border-radius: 2px; }
+.rates-table .rate-pack-row { background: #f5f3ff; }
 .rate-price-input { width: 130px; padding: 10px; border: 1px solid #dbe0eb; border-radius: 9px; background: white; color: #1e293b; font: inherit; }
 .rate-price-input::placeholder { font-size: 10px; color: #94a3b8; }
 .rate-price-input:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
@@ -656,3 +660,7 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .rental-booking-sheet .rental-search input { border: 0; }
 .rental-booking-sheet .rental-search input:focus-visible { outline: none; }
 .rental-booking-sheet .rental-search:focus-within { outline-color: #c4b5fd; }
+
+.seasonal-categories, .seasonal-list-selector { margin-top: 24px; margin-bottom: 24px; }
+.seasonal-settings .rentals-panel-heading h2, .seasonal-categories h2 { color: #7c3aed; }
+.seasonal-settings input, .seasonal-list-selector select { border-color: #7c3aed; }

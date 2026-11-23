@@ -54,7 +54,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
         setInventory(result);
         const availableIds = new Set(result.items.filter((item) => !item.open_repair).map((item) => item.id));
         const unavailable = currentSelection.current.selected.filter((item) => !availableIds.has(item.id));
-        unavailable.forEach((item) => currentSelection.current.onRemove(item.id));
+        unavailable.forEach((item) => {for(let pair=0;pair<(item.quantity||1);pair++) currentSelection.current.onRemove(item.id);});
         if (unavailable.length) {
           setMessage('');
           setError(`Materiale non più disponibile, rimosso dalla selezione: ${unavailable.map((item) => item.code).join(', ')}.`);
@@ -78,7 +78,9 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
 
   function add(item: RentalItem) {
     setMessage(''); setError('');
-    if (selectedIds.has(item.id)) {
+    if (item.is_generic && (selected.find(entry=>entry.id===item.id)?.quantity||0)>=1000) {
+      setError('Puoi aggiungere al massimo 1000 paia di bastoncini.');
+    } else if (selectedIds.has(item.id) && !item.is_generic) {
       setError(`L’articolo ${item.code} è già stato aggiunto al noleggio.`);
     } else if (!canSelect(item)) {
       setError(`L’articolo ${item.code} non può essere aggiunto: ${unavailableReason(item).toLocaleLowerCase('it-IT')}.`);
@@ -110,7 +112,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
             : !inventory ? <p role="status">Caricamento materiale…</p>
               : <>
                 <form className="rental-form-grid rental-equipment-code" onSubmit={addByCode}>
-                  <label>Codice materiale<input ref={codeInput} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value); setError(''); setMessage(''); }} placeholder="Scansiona o scrivi il codice" /></label>
+                  <label>Codice materiale<input ref={codeInput} type="text" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => { setCode(event.target.value.toUpperCase()); setError(''); setMessage(''); }} placeholder="Scansiona o scrivi il codice (1 per bastoncini)" /></label>
                   <button className="sales-button sales-button-primary" type="submit" disabled={!code.trim()}><Barcode size={18} aria-hidden="true" />Aggiungi codice</button>
                 </form>
                 {error && <p className="auth-error" role="alert">{error}</p>}
@@ -127,7 +129,7 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
                       <thead><tr><th scope="col">Codice</th><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Misura</th><th scope="col">Gruppo</th><th scope="col">Selezione</th></tr></thead>
                       <tbody>{pageItems.map((item) => <tr key={item.id}>
                         <th scope="row" className="unit-code">{item.code}{item.open_repair && <span className="repair-badge">In riparazione</span>}</th><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td>{item.group.name}</td>
-                        <td>{!canSelect(item) ? <span className="rental-secondary">{unavailableReason(item)}</span> : <button type="button" className="sales-button" disabled={selectedIds.has(item.id)} aria-label={`${selectedIds.has(item.id) ? 'Già aggiunto' : 'Aggiungi'} ${item.code}`} onClick={() => add(item)}><Plus size={14} aria-hidden="true" />{selectedIds.has(item.id) ? 'Aggiunto' : 'Aggiungi'}</button>}</td>
+                        <td>{!canSelect(item) ? <span className="rental-secondary">{unavailableReason(item)}</span> : <button type="button" className="sales-button" disabled={selectedIds.has(item.id) && !item.is_generic} aria-label={`${selectedIds.has(item.id) && !item.is_generic ? 'Già aggiunto' : 'Aggiungi'} ${item.code}`} onClick={() => add(item)}><Plus size={14} aria-hidden="true" />{selectedIds.has(item.id) && !item.is_generic ? 'Aggiunto' : 'Aggiungi'}</button>}</td>
                       </tr>)}
                       {results.length === 0 && <tr><td colSpan={6}><div className="rentals-empty">Nessun materiale trovato.</div></td></tr>}</tbody>
                     </table>
@@ -142,12 +144,12 @@ export function RentalEquipmentSection({ token, locationId, locationName, select
           setInventory((current) => current ? { ...current, items: current.items.map((entry) => entry.id === item.id ? item : entry) } : current);
           onAdd(item); setCode(''); setMessage(`Articolo ${item.code} aggiunto. Riparazione conclusa.`); codeInput.current?.focus();
         }} />}
-        <h3 className="rental-equipment-selected-title">Articoli selezionati ({selected.length})</h3>
+        <h3 className="rental-equipment-selected-title">Articoli selezionati ({selected.reduce((total,item)=>total+(item.quantity||1),0)})</h3>
         {selected.length === 0 ? <p className="rental-form-hint">Non hai ancora aggiunto materiale al noleggio.</p>
           : <div className="rentals-table-scroll" role="region" aria-label="Articoli selezionati per il noleggio" tabIndex={0}>
             <table className="rentals-table rental-equipment-table"><caption className="sr-only">Materiale scelto per la bozza del noleggio</caption>
               <thead><tr><th scope="col">Codice</th><th scope="col">Categoria</th><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Misura</th><th scope="col">Rimuovi</th></tr></thead>
-              <tbody>{selected.map((item) => <tr key={item.id}><th scope="row" className="unit-code">{item.code}</th><td>{item.variant.category.name}</td><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td><button className="icon-button" type="button" aria-label={`Rimuovi ${item.code}`} onClick={() => { onRemove(item.id); setError(''); setMessage(`Articolo ${item.code} rimosso.`); }}><Trash2 size={17} aria-hidden="true" /></button></td></tr>)}</tbody>
+              <tbody>{selected.flatMap(item=>Array.from({length:item.quantity||1},(_,pair)=>({item,pair}))).map(({item,pair}) => <tr key={`${item.id}:${pair}`}><th scope="row" className="unit-code">{item.code}</th><td>{item.variant.category.name}</td><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{sizeLabel(item.variant)}</td><td><button className="icon-button" type="button" aria-label={`Rimuovi ${item.code}`} onClick={() => { onRemove(item.id); setError(''); setMessage(`Articolo ${item.code} rimosso.`); }}><Trash2 size={17} aria-hidden="true" /></button></td></tr>)}</tbody>
             </table>
           </div>}
         <p className="rental-form-hint rental-equipment-availability">Gli articoli già consegnati o prenotati nel periodo scelto sono esclusi. Senza un periodo completo viene verificata la disponibilità di oggi. La disponibilità viene ricontrollata alla conferma.</p>

@@ -216,3 +216,21 @@ describe('Rientri reali previsti oggi', () => {
     expect(mocks.get).toHaveBeenCalledTimes(2);
   });
 });
+
+
+it('returns generic poles only with the booking selected in the details', async () => {
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Registra rientro' }));
+  fireEvent.change(screen.getByLabelText('Codice materiale'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Conferma rientro' }));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Per i bastoncini apri la scheda del noleggio e premi Registra un altro rientro.');
+  expect(mocks.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Chiudi registrazione rientro' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apri scheda rientro 125' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Registra un altro rientro' }));
+  mocks.post.mockResolvedValue(booking);
+  fireEvent.change(screen.getByLabelText('Codice materiale'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Conferma rientro' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/locations/site-a/rental-returns', 'token',
+    { request_id: expect.any(String), code: '1', booking_id: booking.id }, expect.any(AbortSignal)));
+});

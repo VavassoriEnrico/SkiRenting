@@ -1,5 +1,5 @@
 import { CalendarPlus, Check, Plus, Search, UserRound } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
@@ -17,21 +17,25 @@ import type { RentalQuote } from './RentalRecapSection';
 import { RentalPaymentSection } from './RentalPaymentSection';
 import { emptyPayment, paymentSummary } from './rental-payment';
 import type { RentalPaymentDraft } from './rental-payment';
+import { SeasonalPeriodFields } from '../seasonal/SeasonalPeriodFields';
+import { SeasonalRecapSection } from '../seasonal/SeasonalRecapSection';
+import { localToday } from '../seasonal/seasonal';
+import type { SeasonalSettings, RentalSeason, SeasonalQuote } from '../seasonal/seasonal';
 import { RentalBookingSuccess } from './RentalBookingSuccess';
 import type { SavedBooking } from './RentalBookingSuccess';
 
 type CustomerValues = { first_name: string; last_name: string; email: string; phone: string; notes: string; birth_date: string; skill_level: SkillLevel | ''; language: string; country_code: string };
 const emptyValues: CustomerValues = { first_name: '', last_name: '', email: '', phone: '', notes: '', birth_date: '', skill_level: '', language: '', country_code: '' };
 
-export function RentalCustomerPage() {
+export function RentalCustomerPage({seasonal=false}:{seasonal?:boolean}) {
   const { session, location } = useAuth();
   const [revision, setRevision] = useState(0);
   return session
-    ? <RentalCustomerForm key={`${session.access_token}:${location?.id}:${revision}`} token={session.access_token} locationId={location?.id} locationName={location?.name} onNew={() => setRevision((current) => current + 1)} />
+    ? <RentalCustomerForm key={`${seasonal}:${session.access_token}:${location?.id}:${revision}`} seasonal={seasonal} token={session.access_token} locationId={location?.id} locationName={location?.name} onNew={() => setRevision((current) => current + 1)} />
     : <p role="status">Accedi per iniziare un noleggio.</p>;
 }
 
-function RentalCustomerForm({ token, locationId, locationName, onNew }: { token: string; locationId?: string; locationName?: string; onNew: () => void }) {
+function RentalCustomerForm({ token, locationId, locationName, onNew, seasonal }: { seasonal:boolean; token: string; locationId?: string; locationName?: string; onNew: () => void }) {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -43,9 +47,19 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
   const [registered, setRegistered] = useState(false);
   const [period, setPeriod] = useState<RentalPeriod>({ starts_on: '', ends_on: '', hotel: '' });
   const [equipment, setEquipment] = useState<RentalItem[]>([]);
+  const [season,setSeason]=useState<RentalSeason|null>(null);
+  const [seasonError,setSeasonError]=useState('');
   const [quote, setQuote] = useState<RentalQuote | null>(null);
   const [payment, setPayment] = useState<RentalPaymentDraft>(emptyPayment);
   const [bookingNotes, setBookingNotes] = useState('');
+  const receiveSeasonalQuote=useCallback((next:RentalQuote|null)=>{
+    setQuote(next);
+    const updated=(next as SeasonalQuote|null)?.season;
+    if(updated){
+      setSeason(current=>current?.id===updated.id&&current.return_date===updated.return_date&&current.name===updated.name?current:updated);
+      setPeriod(current=>current.ends_on===updated.return_date?current:{...current,ends_on:updated.return_date});
+    }
+  },[]);
   const [bookingId] = useState(() => crypto.randomUUID());
   const [confirmed, setConfirmed] = useState<SavedBooking | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -53,8 +67,9 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
   const confirmRequest = useRef<AbortController | null>(null);
   const confirmInFlight = useRef(false);
   const quoteMatches = !!(selected && quote && quote.starts_on === period.starts_on && quote.ends_on === period.ends_on
-    && (quote.hotel?.id || '') === period.hotel && quote.items.length === equipment.length
-    && equipment.every((item) => quote.items.some((line) => line.inventory_id === item.id)));
+    && (quote.hotel?.id || '') === period.hotel && quote.items.length === equipment.reduce((count,item)=>count+(item.quantity||1),0)
+    && equipment.every((item) => quote.items.some((line) => line.inventory_id === item.id))
+    && (!seasonal || (quote as SeasonalQuote).season?.id===season?.id));
   const currentTotal = quoteMatches ? quote!.total : null;
   const paymentState = paymentSummary(payment, currentTotal);
   const submitting = useRef(false);
@@ -73,6 +88,14 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
     return () => controller.abort();
   }, [token, attempt]);
 
+  useEffect(()=>{
+    if(!seasonal)return;
+    const controller=new AbortController();
+    apiGet<SeasonalSettings>('/seasonal-rentals/settings',token,controller.signal)
+      .then(result=>{if(!controller.signal.aborted){setSeason(result.current_season);if(result.current_season)setPeriod({starts_on:localToday(),ends_on:result.current_season.return_date,hotel:''});}})
+      .catch(cause=>{if(!controller.signal.aborted)setSeasonError(cause instanceof Error?cause.message:'Impossibile caricare la stagione.');});
+    return()=>controller.abort();
+  },[token,seasonal]);
   useEffect(() => () => saveRequest.current?.abort(), []);
   useEffect(() => () => confirmRequest.current?.abort(), []);
   useEffect(() => { if (isNew) firstNameInput.current?.focus(); }, [isNew]);
@@ -145,9 +168,9 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
         await updateContacts(controller);
         if (controller.signal.aborted) return;
       }
-      const booking = await apiPost<SavedBooking>(`/locations/${locationId}/rental-bookings`, token, {
-        booking_id: bookingId, customer_id: selected.id, starts_on: period.starts_on, ends_on: period.ends_on,
-        hotel_id: period.hotel || null, inventory_ids: equipment.map((item) => item.id), expected_total: currentTotal,
+      const booking = await apiPost<SavedBooking>(`/locations/${locationId}/${seasonal?'seasonal-bookings':'rental-bookings'}`, token, {
+        booking_id: bookingId, customer_id: selected.id, starts_on: period.starts_on,
+        ...(seasonal?{season_id:season?.id,expected_return_date:period.ends_on}:{ends_on:period.ends_on,hotel_id:period.hotel||null}), inventory_ids: equipment.map((item) => item.id), ...(equipment.some(item=>item.is_generic)?{pole_quantity:equipment.find(item=>item.is_generic)?.quantity||1}:{}), expected_total: currentTotal,
         notes: bookingNotes.trim() || null,
         payment: paymentState.amountCents! > 0 ? {
           amount: (paymentState.amountCents! / 100).toFixed(2), payment_method: paymentState.method,
@@ -167,8 +190,8 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
   return (
     <div className="dashboard-page rental-customer-page">
       <div className="dashboard-heading"><div>
-        <div className="page-heading"><span className="heading-icon"><CalendarPlus size={21} aria-hidden="true" /></span><h1>Nuovo noleggio</h1></div>
-        <p className="page-description">Compila cliente e soggiorno, aggiungi il materiale e conferma il noleggio.</p>
+        <div className="page-heading"><span className="heading-icon"><CalendarPlus size={21} aria-hidden="true" /></span><h1>{seasonal?'Nuovo noleggio stagionale':'Nuovo noleggio'}</h1></div>
+        <p className="page-description">{seasonal?'Compila il cliente e aggiungi il materiale: i pack stagionali vengono riconosciuti automaticamente.':'Compila cliente e soggiorno, aggiungi il materiale e conferma il noleggio.'}</p>
       </div></div>
 
       <fieldset className="rental-booking-fields rental-booking-sheet" disabled={confirming}>
@@ -217,19 +240,19 @@ function RentalCustomerForm({ token, locationId, locationName, onNew }: { token:
           </div>}
         </form>
       </RentalSection>
-      <RentalPeriodFields value={period} onChange={setPeriod} />
+      <>{seasonal?<SeasonalPeriodFields season={season} error={seasonError} period={period} onChange={setPeriod}/>:<RentalPeriodFields value={period} onChange={setPeriod}/>}</>
       </div>
       <div className="rental-form-grid rental-booking-notes-row">
         {(selected || isNew) && <label>Note cliente<textarea maxLength={5000} readOnly={!!selected} disabled={saving} value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} /></label>}
         <label>Note prenotazione<textarea maxLength={5000} value={bookingNotes} onChange={(event) => setBookingNotes(event.target.value)} placeholder="Annotazioni per questo noleggio (facoltative)" /></label>
       </div>
-      <RentalEquipmentSection startsOn={period.starts_on} endsOn={period.ends_on} token={token} locationId={locationId} locationName={locationName} selected={equipment} onAdd={(item) => setEquipment((current) => current.some((entry) => entry.id === item.id) ? current : [...current, item])} onRemove={(id) => setEquipment((current) => current.filter((item) => item.id !== id))} />
-      <RentalRecapSection token={token} locationId={locationId} customer={selected} period={period} equipment={equipment} onQuoteChange={setQuote} bookingNotes={bookingNotes} />
+      <RentalEquipmentSection startsOn={period.starts_on} endsOn={period.ends_on} token={token} locationId={locationId} locationName={locationName} selected={equipment} onAdd={(item) => setEquipment((current) => current.some((entry) => entry.id === item.id) ? (item.is_generic?current.map(entry=>entry.id===item.id?{...entry,quantity:(entry.quantity||1)+1}:entry):current) : [...current, item])} onRemove={(id) => setEquipment((current) => current.flatMap(item=>item.id!==id?[item]:item.is_generic&&(item.quantity||1)>1?[{...item,quantity:(item.quantity||1)-1}]:[]))} />
+      <>{seasonal?<SeasonalRecapSection token={token} locationId={locationId} season={season} customer={selected} period={period} equipment={equipment} onQuoteChange={receiveSeasonalQuote}/>:<RentalRecapSection token={token} locationId={locationId} customer={selected} period={period} equipment={equipment} onQuoteChange={setQuote} bookingNotes={bookingNotes}/>}</>
       <RentalPaymentSection total={currentTotal} value={payment} onChange={setPayment} />
       <div className="rental-booking-confirm">
         {confirmError && <p className="auth-error" role="alert">{confirmError}</p>}
         {!paymentState.complete && <p className="rental-form-hint">Completa cliente, periodo, materiale, prezzi e scelta del pagamento per confermare.</p>}
-        <button className="sales-button sales-button-primary" type="button" disabled={confirming || !paymentState.complete || !selected || !locationId} onClick={() => void confirmBooking()}>{confirming ? 'Conferma in corso…' : 'Conferma noleggio'}</button>
+        <button className="sales-button sales-button-primary" type="button" disabled={confirming || !paymentState.complete || !selected || !locationId} onClick={() => void confirmBooking()}>{confirming ? 'Conferma in corso…' : seasonal?'Conferma stagionale':'Conferma noleggio'}</button>
       </div>
       </fieldset>
     </div>

@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus, ChartNoAxesCombined, House, Package, ReceiptText, RotateCcw, ShoppingBag, ShoppingCart, Users, Wrench, Settings2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Snowflake, ChartNoAxesCombined, House, Package, ReceiptText, RotateCcw, ShoppingBag, ShoppingCart, Users, Wrench, Settings2 } from 'lucide-react';
 
 export const navigationSections = [
   {
@@ -20,6 +20,14 @@ export const navigationSections = [
       { href: '/operativita/noleggi', label: 'Nuovo noleggio', icon: CalendarPlus },
       { href: '/noleggi/attuali', label: 'Noleggi attuali', icon: CalendarDays },
       { href: '/noleggi', label: 'Storico noleggi', icon: CalendarDays },
+    ],
+  },
+  {
+    id: 'seasonal-rentals', label: 'Noleggi stagionali',
+    items: [
+      { href: '/operativita/noleggi-stagionali', label: 'Nuovo noleggio stagionale', icon: Snowflake },
+      { href: '/noleggi/stagionali/attuali', label: 'Noleggi stagionali attuali', icon: CalendarDays },
+      { href: '/noleggi/stagionali', label: 'Storico noleggi stagionali', icon: CalendarDays },
     ],
   },
   {

@@ -87,3 +87,24 @@ it('shows the winning promotion instead of labelling its discount as a hotel dis
   expect(screen.queryByText(/Sconto albergo/)).toBeNull();
   expect(screen.getAllByText('Albergo').length).toBeGreaterThan(0);
 });
+
+
+it('groups a daily pack with included boots and keeps separately priced poles outside the pack',async()=>{
+  const boot={...item,id:'boot',code:'BOOT1',variant:{...item.variant,category:{id:'boot-category',code:'ski_boots',name:'Scarponi sci'}}};
+  const poles={...item,id:'poles',code:'1',is_generic:true,quantity:2,variant:{...item.variant,category:{id:'poles-category',code:'poles',name:'Bastoncini'}}};
+  api.post.mockResolvedValue({...quote,subtotal:'90',discount_percent:'0',hotel:null,discount_amount:'0',total:'90',items:[
+    {...quote.items[0],inventory_id:'poles',line_key:'poles:2',code:'1',price_mode:'single',pack_main_id:null,daily_price:'5',amount:'15'},
+    {...quote.items[0],inventory_id:'boot',line_key:'boot',code:'BOOT1',price_mode:'included',pack_main_id:item.id,daily_price:'0',amount:'0'},
+    {...quote.items[0],line_key:item.id,price_mode:'pack',pack_main_id:item.id,daily_price:'25',amount:'75'},
+    {...quote.items[0],inventory_id:'poles',line_key:'poles:1',code:'1',price_mode:'included',pack_main_id:item.id,daily_price:'0',amount:'0'},
+  ]});
+  render(<RentalRecapSection {...props} equipment={[item,boot,poles]}/>);
+  await screen.findByText('Pack 1');
+  const table=screen.getByRole('region',{name:'Prezzi del noleggio'});
+  const rows=within(table).getAllByRole('row').slice(1);
+  expect(within(rows[0]).getByRole('rowheader',{name:'+001'})).toBeTruthy();
+  expect(within(rows[1]).getByRole('rowheader',{name:'BOOT1'})).toBeTruthy();
+  expect(within(rows[2]).getByText('Incluso nel pack 1')).toBeTruthy();
+  expect(within(rows[3]).queryByText(/Incluso nel pack/)).toBeNull();
+  expect(api.post).toHaveBeenCalledWith('/locations/site-a/rental-quote','token',expect.objectContaining({pole_quantity:2}),expect.any(AbortSignal));
+});

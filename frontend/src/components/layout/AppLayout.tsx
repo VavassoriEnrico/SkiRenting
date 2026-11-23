@@ -16,9 +16,11 @@ export function AppLayout() {
   const mobileMenu = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const section = getNavigationSections(location?.name).find((entry) => entry.items.some((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`))));
-    const page = section?.items.find((item) => (item.href === pathname || pathname.startsWith(`${item.href}/`)));
-    document.title = page ? `${page.label} · ${section?.label} · SkiRenting` : 'SkiRenting';
+    const match = getNavigationSections(location?.name)
+      .flatMap(section => section.items.map(page => ({section,page})))
+      .filter(({page}) => page.href === pathname || pathname.startsWith(`${page.href}/`))
+      .sort((a,b) => b.page.href.length-a.page.href.length)[0];
+    document.title = match ? `${match.page.label} · ${match.section.label} · SkiRenting` : 'SkiRenting';
   }, [pathname, location?.name]);
 
   useEffect(() => {

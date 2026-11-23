@@ -198,3 +198,20 @@ describe('Materiale del noleggio', () => {
     expect(screen.getByRole('alert').textContent).toContain('Terza sede');
   });
 });
+
+
+it('adds a separate code 1 row for every pair and removes one row at a time', async () => {
+  const poles:RentalItem={...item,id:'generic-poles',code:'1',is_generic:true,
+    variant:{...item.variant,category:{id:'poles',code:'poles',name:'Bastoncini'}}};
+  mocks.get.mockImplementation((path:string)=>Promise.resolve(path==='/customers'||path==='/hotels'?[]:{...inventory,items:[...inventory.items,poles]}));
+  await open();
+  scan('1');scan('1');scan('1');
+  const selected=screen.getByRole('region',{name:'Articoli selezionati per il noleggio'});
+  expect(within(selected).getAllByRole('rowheader',{name:'1'})).toHaveLength(3);
+  expect(screen.queryByText('3 paia')).toBeNull();
+  fireEvent.click(within(selected).getAllByRole('button',{name:'Rimuovi 1'})[1]);
+  expect(within(selected).getAllByRole('rowheader',{name:'1'})).toHaveLength(2);
+  expect(screen.getByText('Articoli selezionati (2)')).toBeTruthy();
+  scan('1');
+  expect(within(selected).getAllByRole('rowheader',{name:'1'})).toHaveLength(3);
+});

@@ -512,3 +512,108 @@ Sono alternative data singola, giorni settimanali e periodo: nessuna combinazion
 Conserva promozioni e prenotazioni esistenti ed è ripetibile. Il periodo vale per
 qualsiasi noleggio di una sola giornata compresa nell'intervallo; non abilita sconti
 promozionali su noleggi di più giorni. Resta il massimo tra promozioni e albergo.
+
+## 023 — Noleggi stagionali
+
+Eseguire tutta [023_seasonal_rentals.sql](023_seasonal_rentals.sql) dopo 022 e le
+migrazioni del magazzino, dei noleggi e dei pagamenti. La query è ripetibile.
+Crea `rental_seasons` (nome, data di consegna globale, stagione corrente) e
+`seasonal_rates` (gruppo, prezzo singolo, prezzo pack). I prezzi sono totali per
+lo stagionale; campi null indicano tariffe da configurare, zero indica gratuito.
+Ogni gruppo esistente o nuovo riceve una riga tariffa vuota.
+
+Le prenotazioni riusano `rental_bookings`, `rental_booking_items` e
+`rental_payments`: `rental_kind` distingue daily/seasonal, `season_id` identifica
+la stagione e le righe conservano formula e riferimento al pack. I pack sono
+riconosciuti automaticamente dai codici selezionati: sci/snowboard, scarponi
+compatibili; i bastoncini sono facoltativi e inclusi solo nei pack sci. In caso di più attrezzi si segue l'ordine di inserimento,
+senza riutilizzare esemplari. Il prezzo pack è addebitato sull'attrezzo; gli altri
+codici del pack sono inclusi a zero ma restano occupati e devono rientrare singolarmente.
+Gli articoli fuori dai pack mantengono la tariffa singola.
+
+Configurare stagione, consegna e listino in Gestione → Tariffe stagionali prima
+di confermare un noleggio. La consegna è interpretata come data di restituzione
+comune ai nuovi stagionali; modifiche successive non cambiano date e importi già
+salvati. Preventivo e conferma ricalcolano i pack nel database; la conferma atomica
+verifica disponibilità, data globale e totale, registra l'eventuale acconto e
+mantiene l'idempotenza. Le tariffe stagionali non applicano sconti giornalieri.
+Le configurazioni sono condivise fra sedi, le prenotazioni appartengono alla sede.
+
+## 024 — Pack stagionali senza obbligo di bastoncini
+
+Eseguire [024_seasonal_automatic_packs.sql](024_seasonal_automatic_packs.sql)
+dopo 023 anche se le tabelle stagionali sono già state create. Aggiorna il
+riconoscimento automatico: sci + scarponi compatibili oppure snowboard + scarponi
+compatibili formano subito un pack. I bastoncini sono facoltativi e inclusi nei
+pack sci, mentre quelli aggiunti a un pack snowboard restano singoli. Un esemplare
+non è mai condiviso tra pack; gli abbinamenti seguono l'ordine di inserimento.
+Non modifica prenotazioni o prezzi storici; conferma e preventivo usano la stessa
+funzione aggiornata. La query è ripetibile.
+
+## 025 — Bastoncini con codice generico 1
+
+Eseguire [025_generic_poles.sql](025_generic_poles.sql) dopo 024. Crea il gruppo
+«Bastoncini generici» e un'unica voce globale di rental_inventory con codice `1`,
+is_generic=true e location_id null. La voce è disponibile nei nuovi noleggi di
+tutte le sedi autorizzate e non è conteggiata come esemplare fisico nei magazzini.
+Non elimina né modifica gli esemplari e le prenotazioni esistenti. Se il codice 1
+è già assegnato a un esemplare, interrompe la migrazione prima di modificarlo.
+
+Il codice può essere usato contemporaneamente in più prenotazioni giornaliere o
+stagionali. Ogni prenotazione conserva la propria riga, importo e rientro. Con
+gli sci, anche senza scarponi, i bastoncini sono inclusi a zero; senza sci usano
+il prezzo del gruppo nel rispettivo listino. I prezzi iniziali restano null e
+vanno impostati in Tariffe e Tariffe stagionali. I pack sci + scarponi mantengono
+il proprio prezzo stagionale.
+
+La conferma atomica esclude solo le voci generiche dal controllo di occupazione;
+continua a verificare disponibilità e sede degli esemplari fisici. I rientri del
+codice 1 usano skirenting_register_generic_return con ID prenotazione esplicito,
+senza scegliere arbitrariamente fra i noleggi aperti. Aprire la scheda di rientro
+del noleggio e premere «Registra un altro rientro», poi inserire 1; è possibile
+anche inserirlo dopo il codice degli sci nello stesso modulo di rientro.
+
+## 026 — Più righe per il codice 1 nella stessa prenotazione
+
+Eseguire [026_generic_pole_quantities.sql](026_generic_pole_quantities.sql) dopo
+025. Ogni inserimento di 1 aggiunge un paio, visualizzato su una riga separata.
+L'API trasmette pole_quantity (da 1 a 1000) insieme agli ID distinti; preventivo e
+conferma espandono la voce in righe indipendenti. Il vincolo di unicità degli
+esemplari rimane attivo solo per materiale fisico: un trigger ricava is_generic
+dall'inventario, senza fidarsi dei dati della richiesta.
+
+Un paio di bastoncini per ogni paio di sci è gratuito; le paia in eccedenza usano
+la tariffa del gruppo Bastoncini generici nel rispettivo listino. Ogni riga
+inclusa conserva il riferimento agli sci del proprio pack e un importo zero.
+I rientri con codice 1 e prenotazione esplicita riconsegnano una sola riga alla
+volta; ritentare lo stesso request_id non riconsegna il paio successivo.
+La migrazione è ripetibile e non ricalcola le prenotazioni precedenti.
+
+## 027 — Configurazione delle tariffe pack giornaliere
+
+Eseguire [027_daily_pack_rates.sql](027_daily_pack_rates.sql) dopo 026. Aggiunge
+sette prezzi pack a rental_rates, da pack_price_1_day a pack_price_7_plus_days.
+Sono importi al giorno, come i sette prezzi singoli: null significa da configurare,
+zero significa gratuito. Conserva tutti i prezzi e i noleggi esistenti; le nuove
+colonne partono vuote. Gli aggiornamenti mantengono le RLS del listino e sono
+consentiti solo agli operatori configurati. Il database permette prezzi pack
+soltanto per i gruppi di sci e snowboard. La query è ripetibile.
+
+Questa migrazione prepara il listino. Per applicare i prezzi pack al preventivo
+e alla conferma giornaliera eseguire anche 028_apply_daily_packs.sql.
+
+## 028 — Applicazione automatica dei pack giornalieri
+
+Eseguire [028_apply_daily_packs.sql](028_apply_daily_packs.sql) dopo 027. Aggiorna
+la conferma atomica giornaliera: sci + scarponi da sci e snowboard + scarponi da
+snowboard diventano pack, abbinati nell'ordine di inserimento senza riutilizzare
+scarponi. Il prezzo pack del gruppo dell'attrezzo e della durata scelta è al
+giorno e viene moltiplicato per tutti i giorni; 7+ vale per l'intera durata.
+Scarponi inclusi a zero, con riferimento all'attrezzo del pack. I singoli restano
+a tariffa singola. Un paio di bastoncini per ogni sci rimane gratuito anche senza
+scarponi; eventuali paia in più restano a tariffa e con rientri separati.
+
+Una tariffa pack mancante blocca la conferma senza scritture parziali. Sconti
+albergo/promozioni, acconti, disponibilità e idempotenza mantengono le regole
+esistenti. I noleggi salvati conservano prezzi e abbinamenti storici. La query è
+ripetibile e non modifica le tariffe stagionali.

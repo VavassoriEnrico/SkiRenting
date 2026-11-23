@@ -63,6 +63,7 @@ class OpenRepairRead(BaseModel):
 
 
 class RentalItemRead(BaseModel):
+    is_generic: bool = False
     open_repair: OpenRepairRead | None = None
     id: UUID
     code: str

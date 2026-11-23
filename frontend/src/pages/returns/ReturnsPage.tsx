@@ -35,6 +35,7 @@ function TodayReturnsPage({ token, locationId, locationName }: { token: string; 
   const [selected, setSelected] = useState<ReturnBooking | null>(null);
   const [paying, setPaying] = useState<ReturnBooking | null>(null);
   const [registering, setRegistering] = useState(false);
+  const [registerBooking, setRegisterBooking] = useState<ReturnBooking|null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setError('');
@@ -78,7 +79,7 @@ function TodayReturnsPage({ token, locationId, locationName }: { token: string; 
     </section>
     {data && !error && groups.map((group) => <ReturnBookingsSection key={`${group.color}:${query}`} {...group} bookings={visible.filter((booking) => returnState(booking).color === group.color)} onSelect={setSelected} onPay={(booking) => { setSelected(null); setPaying(booking); }} />)}
     {paying && <ReturnPaymentDialog key={paying.id} booking={paying} token={token} locationId={locationId} onClose={() => setPaying(null)} onSaved={(booking) => { setPaying(null); setSelected(booking); setAttempt((value) => value + 1); }} />}
-    {registering && <ReturnRegistrationDialog token={token} locationId={locationId} onClose={() => setRegistering(false)} onSaved={() => { setAttempt((value) => value + 1); }} />}
-    {selected && <ReturnDetailsDialog key={selected.id} booking={selected} onClose={() => setSelected(null)} onPay={() => { setPaying(selected); setSelected(null); }} onRegister={() => { setSelected(null); setRegistering(true); }} />}
+    {registering && <ReturnRegistrationDialog token={token} locationId={locationId} initialBooking={registerBooking} onClose={() => {setRegistering(false);setRegisterBooking(null);}} onSaved={() => { setAttempt((value) => value + 1); }} />}
+    {selected && <ReturnDetailsDialog key={selected.id} booking={selected} onClose={() => setSelected(null)} onPay={() => { setPaying(selected); setSelected(null); }} onRegister={() => { setRegisterBooking(selected); setSelected(null); setRegistering(true); }} />}
   </div>;
 }

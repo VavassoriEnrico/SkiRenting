@@ -14,6 +14,9 @@ import { ReturnsPage } from '../pages/returns/ReturnsPage';
 import { RequireAuth } from '../auth/RequireAuth';
 import { LoginPage } from '../pages/login/LoginPage';
 import { ManagementPage } from '../pages/management/ManagementPage';
+import { SeasonalRatesPage } from '../pages/seasonal/SeasonalRatesPage';
+import { SeasonalRentalsPage } from '../pages/seasonal/SeasonalRentalsPage';
+import { RentalCustomerPage } from '../pages/operations/RentalCustomerPage';
 import { PromotionsPage } from '../pages/management/PromotionsPage';
 import { HotelsPage } from '../pages/management/HotelsPage';
 import { RentalRatesPage } from '../pages/management/RentalRatesPage';
@@ -28,12 +31,16 @@ export function App() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/clienti" element={<CustomersPage />} />
         <Route path="/management" element={<ManagementPage />} />
+        <Route path="/management/tariffe-stagionali" element={<SeasonalRatesPage/>}/>
         <Route path="/management/promozioni" element={<PromotionsPage />} />
         <Route path="/management/hotels" element={<HotelsPage />} />
         <Route path="/management/tariffe" element={<RentalRatesPage />} />
+        <Route path="/noleggi/stagionali/attuali" element={<SeasonalRentalsPage view="current"/>}/>
+        <Route path="/noleggi/stagionali" element={<SeasonalRentalsPage view="history"/>}/>
         <Route path="/noleggi/attuali" element={<RentalsPage view="current" />} />
         <Route path="/noleggi" element={<RentalsPage view="history" />} />
         <Route path="/vendite" element={<SalesPage />} />
+        <Route path="/operativita/noleggi-stagionali" element={<RentalCustomerPage seasonal/>}/>
         <Route path="/operativita/noleggi" element={<OperationsPage mode="rental" />} />
         <Route path="/operativita/vendite" element={<OperationsPage mode="sale" />} />
         <Route path="/operativita/rientri" element={<ReturnsPage />} />

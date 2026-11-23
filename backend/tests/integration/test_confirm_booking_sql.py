@@ -58,7 +58,13 @@ def confirmation_database():
                              '019_material_repairs_workflow.sql', '019_material_repairs_workflow.sql',
                              '020_promotions.sql', '020_promotions.sql',
                              '021_apply_rental_promotions.sql', '021_apply_rental_promotions.sql',
-                             '022_promotions_period.sql', '022_promotions_period.sql']:
+                             '022_promotions_period.sql', '022_promotions_period.sql',
+                             '023_seasonal_rentals.sql', '023_seasonal_rentals.sql',
+                             '024_seasonal_automatic_packs.sql', '024_seasonal_automatic_packs.sql',
+                             '025_generic_poles.sql', '025_generic_poles.sql',
+                             '026_generic_pole_quantities.sql', '026_generic_pole_quantities.sql',
+                             '027_daily_pack_rates.sql', '027_daily_pack_rates.sql',
+                             '028_apply_daily_packs.sql', '028_apply_daily_packs.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -683,3 +689,382 @@ def test_confirmation_periods_compete_with_weekly_hotel_and_ignore_multi_day(set
     # A second specimen avoids overlapping inventory; hotel discount only for several days.
     result=confirm(conn,payload([ids[1]],starts_on='2026-12-01',ends_on='2026-12-03',hotel_id=hotel,expected_total='40.80'))
     assert Decimal(str(result['total']))==Decimal('40.80')
+
+
+
+def seasonal_setup(conn,ids):
+    season=conn.execute("select skirenting_save_rental_season(null,'2026/2027','2027-04-30')").fetchone()[0]
+    conn.execute('update seasonal_rates set single_price=100,pack_price=150 where group_id=(select group_id from rental_inventory where id=%s)',(ids[0],))
+    members=[]
+    for code,category,details in [('BOOT-ST','ski_boots',{'size_label':'26'}),('POLE-ST','poles',{'height_cm':120})]:
+        category_id=str(conn.execute('select id from material_categories where code=%s',(category,)).fetchone()[0])
+        body={'category_id':category_id,'new_group':f'Gruppo {code}','code':code,
+              'new_variant':{'brand':'Stagione','model':code,'details':details}}
+        members.append(conn.execute('select skirenting_create_rental_item(%s,%s)',(SITE_A,Jsonb(body))).fetchone()[0]['id'])
+    data={'season_id':season['id'],'starts_on':'2026-12-01','inventory_ids':[ids[0],*members]}
+    return season,data
+
+
+def test_seasonal_pack_has_one_total_and_occupies_all_codes_idempotently(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(data))).fetchone()[0]
+    assert quote['total']==150 and quote['ends_on']=='2027-04-30'
+    assert sorted(line['amount'] for line in quote['items'])==[0,0,150]
+    assert sorted(line['price_mode'] for line in quote['items'])==['included','included','pack']
+    assert quote['bundles']==[{'main_id':ids[0],'boot_id':data['inventory_ids'][1],'pole_id':data['inventory_ids'][2]}]
+    booking_id=str(uuid4())
+    request={**data,'customer_id':USER_A,'expected_return_date':season['return_date'],'expected_total':'150','payment':None}
+    result=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,booking_id,Jsonb(request))).fetchone()[0]
+    assert result['total']==150 and result['rental_kind']=='seasonal'
+    assert conn.execute('select count(*) from rental_booking_items where booking_id=%s',(booking_id,)).fetchone()[0]==3
+    assert conn.execute('select season_id::text from rental_bookings where id=%s',(booking_id,)).fetchone()[0]==season['id']
+    conn.execute('update seasonal_rates set pack_price=200 where group_id=(select group_id from rental_inventory where id=%s)',(ids[0],))
+    again=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,booking_id,Jsonb(request))).fetchone()[0]
+    assert again['total']==150
+    with pytest.raises(psycopg.errors.RaiseException,match='già assegnati'),conn.transaction():
+        confirm(conn,payload([ids[0]],starts_on='2027-01-01',ends_on='2027-01-01',expected_total='20'))
+
+
+def test_seasonal_quote_missing_price_and_duplicate_codes_are_not_free_rentals(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    conn.execute('update seasonal_rates set pack_price=null where group_id=(select group_id from rental_inventory where id=%s)',(ids[0],))
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(data))).fetchone()[0]
+    assert quote['total'] is None and quote['missing_rate_codes']==['+001']
+    request={**data,'customer_id':USER_A,'expected_return_date':season['return_date'],'expected_total':'0','payment':None}
+    booking_id=str(uuid4())
+    with pytest.raises(psycopg.errors.RaiseException,match='Completa le tariffe'),conn.transaction():
+        conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,booking_id,Jsonb(request)))
+    assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0]==0
+    with pytest.raises(psycopg.errors.InvalidParameterValue),conn.transaction():
+        conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb({**data,'inventory_ids':data['inventory_ids']*2})))
+
+
+def test_seasonal_global_date_and_prices_cannot_change_silently_at_confirmation(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    request={**data,'customer_id':USER_A,'expected_return_date':'2027-04-30','expected_total':'150','payment':None}
+    conn.execute("select skirenting_save_rental_season(%s,'2026/2027','2027-05-01')",(season['id'],))
+    with pytest.raises(psycopg.errors.RaiseException,match='data globale'),conn.transaction():
+        conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,str(uuid4()),Jsonb(request)))
+    new=conn.execute("select skirenting_save_rental_season(null,'2027/2028','2028-04-30')").fetchone()[0]
+    assert new['id']!=season['id']
+    assert conn.execute('select count(*) from rental_seasons where is_current').fetchone()[0]==1
+
+
+def test_seasonal_automatic_pack_never_reuses_boots_or_poles(setup):
+    conn,ids,*_=setup
+    _,data=seasonal_setup(conn,ids)
+    for mains in ([ids[0],ids[1]],[ids[1],ids[0]]):
+        request={**data,'inventory_ids':[*mains,*data['inventory_ids'][1:]]}
+        quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(request))).fetchone()[0]
+        assert quote['total']==250
+        assert quote['bundles']==[{'main_id':mains[0],'boot_id':data['inventory_ids'][1],'pole_id':data['inventory_ids'][2]}]
+        assert sorted(line['price_mode'] for line in quote['items'])==['included','included','pack','single']
+
+
+def test_seasonal_pack_does_not_require_poles_but_requires_boots(setup):
+    conn,ids,*_=setup
+    _,data=seasonal_setup(conn,ids)
+    conn.execute("update seasonal_rates set single_price=40 where group_id=(select group_id from rental_inventory where code='BOOT-ST')")
+    request={**data,'inventory_ids':data['inventory_ids'][:2]}
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(request))).fetchone()[0]
+    assert quote['total']==150
+    assert quote['bundles']==[{'main_id':ids[0],'boot_id':data['inventory_ids'][1],'pole_id':None}]
+    request={**data,'inventory_ids':[ids[0]]}
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(request))).fetchone()[0]
+    assert quote['total']==100 and quote['bundles']==[]
+    assert all(line['price_mode']=='single' for line in quote['items'])
+    request={**data,'inventory_ids':data['inventory_ids'][:2],'customer_id':USER_A,
+             'expected_return_date':'2027-04-30','expected_total':'150','payment':None}
+    result=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,str(uuid4()),Jsonb(request))).fetchone()[0]
+    assert result['total']==150
+    assert conn.execute('select count(*) from rental_booking_items where booking_id=%s',(result['id'],)).fetchone()[0]==2
+
+
+def test_seasonal_snowboard_pack_uses_snowboard_boots_and_leaves_poles_separate(setup):
+    conn,ids,*_=setup
+    _,data=seasonal_setup(conn,ids)
+    members=[]
+    for code,category,details in [('SNOW-ST','snowboard',{'length_cm':155}),('BOOT-SNOW','snowboard_boots',{'size_label':'26'})]:
+        category_id=str(conn.execute('select id from material_categories where code=%s',(category,)).fetchone()[0])
+        body={'category_id':category_id,'new_group':f'Gruppo {code}','code':code,
+              'new_variant':{'brand':'Stagione','model':code,'details':details}}
+        members.append(conn.execute('select skirenting_create_rental_item(%s,%s)',(SITE_A,Jsonb(body))).fetchone()[0]['id'])
+    conn.execute('update seasonal_rates set single_price=120,pack_price=180 where group_id=(select group_id from rental_inventory where id=%s)',(members[0],))
+    conn.execute('update seasonal_rates set single_price=30 where group_id=(select group_id from rental_inventory where id=%s)',(data['inventory_ids'][2],))
+    request={**data,'inventory_ids':[*members,data['inventory_ids'][2]]}
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(request))).fetchone()[0]
+    assert quote['total']==210
+    assert quote['bundles']==[{'main_id':members[0],'boot_id':members[1],'pole_id':None}]
+    assert next(line for line in quote['items'] if line['inventory_id']==data['inventory_ids'][2])['price_mode']=='single'
+
+
+def test_seasonal_pack_requires_compatible_boots(setup):
+    conn,ids,*_=setup
+    _,data=seasonal_setup(conn,ids)
+    category=str(conn.execute("select id from material_categories where code='snowboard_boots'").fetchone()[0])
+    body={'category_id':category,'new_group':'Scarponi snow stagionali','code':'BOOT-SNOW',
+          'new_variant':{'brand':'Stagione','model':'Snow','details':{'size_label':'26'}}}
+    snow_boot=conn.execute('select skirenting_create_rental_item(%s,%s)',(SITE_A,Jsonb(body))).fetchone()[0]['id']
+    request={**data,'inventory_ids':[ids[0],snow_boot,data['inventory_ids'][2]]}
+    quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(request))).fetchone()[0]
+    assert quote['bundles']==[{'main_id':ids[0],'boot_id':None,'pole_id':data['inventory_ids'][2]}]
+    assert next(line for line in quote['items'] if line['inventory_id']==snow_boot)['price_mode']=='single'
+
+
+def test_seasonal_authorization_and_pack_rates_only_for_ski_or_snowboard(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute("update seasonal_rates set pack_price=100 where group_id=(select group_id from rental_inventory where code='BOOT-ST')")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('select skirenting_seasonal_quote(%s,%s)',(str(uuid4()),Jsonb(data)))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute("update rental_seasons set return_date='2028-01-01'")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('set local role anon')
+        conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(data)))
+
+
+
+def test_seasonal_pack_uses_existing_returns_and_payment_balance(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    today=conn.execute("select (now() at time zone 'Europe/Rome')::date").fetchone()[0]
+    return_date=conn.execute('select %s::date+180',(today,)).fetchone()[0]
+    conn.execute('select skirenting_save_rental_season(%s,%s,%s)',(season['id'],season['name'],return_date))
+    request={**data,'starts_on':today.isoformat(),'customer_id':USER_A,'expected_return_date':return_date.isoformat(),'expected_total':'150',
+             'payment':{'amount':'30','payment_method':'Contanti','paid_at':'2026-11-23T10:00:00Z'}}
+    result=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,str(uuid4()),Jsonb(request))).fetchone()[0]
+    assert result['paid_amount']==30 and result['balance']==120
+    register_return(conn,'+001');register_return(conn,'BOOT-ST');register_return(conn,'POLE-ST')
+    record_payment(conn,result['id'],amount='120')
+    assert conn.execute('select status from rental_bookings where id=%s',(result['id'],)).fetchone()[0]=='completed'
+    assert conn.execute('select sum(amount) from rental_payments where booking_id=%s',(result['id'],)).fetchone()[0]==150
+
+
+
+def test_seasonal_expected_total_cannot_override_the_pack_price(setup):
+    conn,ids,*_=setup
+    season,data=seasonal_setup(conn,ids)
+    booking_id=str(uuid4())
+    request={**data,'customer_id':USER_A,'expected_return_date':season['return_date'],'expected_total':'149','payment':None}
+    with pytest.raises(psycopg.errors.RaiseException,match='Listino stagionale cambiato'),conn.transaction():
+        conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,booking_id,Jsonb(request)))
+    assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0]==0
+
+
+@pytest.mark.parametrize('kind', ['daily','seasonal'])
+@pytest.mark.parametrize('with_skis', [False,True])
+def test_generic_poles_reuse_across_bookings_and_sites_with_correct_price(setup,kind,with_skis):
+    conn,ids,*_=setup
+    season,_=seasonal_setup(conn,ids)
+    generic,group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(group,))
+    conn.execute('update seasonal_rates set single_price=5 where group_id=%s',(group,))
+    for index,site in enumerate([SITE_A,SITE_A,SITE_B]):
+        selected=[ids[index],generic] if with_skis and index<2 else [generic]
+        expected=('100' if kind=='seasonal' else '20') if len(selected)==2 else '5'
+        if kind=='daily':
+            result=confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=selected,expected_total=expected),site=site)
+        else:
+            request={'season_id':season['id'],'starts_on':'2026-12-01','inventory_ids':selected,'customer_id':USER_A,
+                     'expected_return_date':season['return_date'],'expected_total':expected,'payment':None}
+            quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(site,Jsonb(request))).fetchone()[0]
+            assert quote['total']==int(expected)
+            result=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(site,str(uuid4()),Jsonb(request))).fetchone()[0]
+        assert result['total']==int(expected)
+        pole_line=conn.execute('select amount,seasonal_pack_main_id from rental_booking_items where booking_id=%s and rental_inventory_id=%s',(result['id'],generic)).fetchone()
+        assert pole_line[0]==(0 if len(selected)==2 else 5)
+        assert (str(pole_line[1]) if pole_line[1] else None)==(selected[0] if len(selected)==2 else None)
+    assert conn.execute('select count(*) from rental_booking_items where rental_inventory_id=%s and returned_at is null',(generic,)).fetchone()[0]==3
+
+
+def test_generic_poles_return_requires_booking_and_does_not_return_other_bookings(setup):
+    conn,ids,*_=setup
+    generic,group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(group,))
+    today=conn.execute("select (now() at time zone 'Europe/Rome')::date").fetchone()[0].isoformat()
+    data=payload(ids,starts_on=today,ends_on=today,inventory_ids=[generic],expected_total='5')
+    first=confirm(conn,data)
+    second=confirm(conn,data)
+    request_id=str(uuid4())
+    with pytest.raises(psycopg.errors.RaiseException,match='scheda del noleggio'),conn.transaction():
+        conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_A,request_id,'1',None))
+    for _ in range(2):
+        result=conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_A,request_id,'1',first['id'])).fetchone()[0]
+        assert result['booking_id']==first['id']
+    assert conn.execute('select returned_at is not null from rental_booking_items where booking_id=%s',(first['id'],)).fetchone()[0]
+    assert conn.execute('select returned_at is null from rental_booking_items where booking_id=%s',(second['id'],)).fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException,match='dati diversi'),conn.transaction():
+        conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_A,request_id,'1',second['id']))
+    with pytest.raises(psycopg.errors.NoDataFound),conn.transaction():
+        conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_B,str(uuid4()),'1',second['id']))
+
+
+def test_generic_poles_missing_rate_is_not_free_and_code_is_reserved(setup):
+    conn,ids,*_=setup
+    generic=conn.execute("select id::text from rental_inventory where code='1' and is_generic").fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException,match='Tariffa non configurata'),conn.transaction():
+        confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[generic],expected_total='0'))
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute('reset role')
+        conn.execute("update rental_inventory set is_generic=true,location_id=null where id=%s",(ids[0],))
+
+
+@pytest.mark.parametrize('kind', ['daily','seasonal'])
+@pytest.mark.parametrize('with_skis', [False,True])
+def test_multiple_generic_poles_have_distinct_lines_and_one_free_pair_per_ski(setup,kind,with_skis):
+    conn,ids,*_=setup
+    season,_=seasonal_setup(conn,ids)
+    generic,group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(group,))
+    conn.execute('update seasonal_rates set single_price=5 where group_id=%s',(group,))
+    selected=[*ids,generic] if with_skis else [generic]
+    expected=205 if kind=='seasonal' and with_skis else 45 if with_skis else 15
+    if kind=='daily':
+        data=payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=selected,pole_quantity=3,expected_total=str(expected))
+        result=confirm(conn,data)
+    else:
+        data={'season_id':season['id'],'starts_on':'2026-12-01','inventory_ids':selected,'pole_quantity':3,
+              'customer_id':USER_A,'expected_return_date':season['return_date'],'expected_total':str(expected),'payment':None}
+        quote=conn.execute('select skirenting_seasonal_quote(%s,%s)',(SITE_A,Jsonb(data))).fetchone()[0]
+        assert quote['total']==expected
+        assert len({line['line_key'] for line in quote['items']})==len(selected)+2
+        result=conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)',(SITE_A,str(uuid4()),Jsonb(data))).fetchone()[0]
+    assert result['total']==expected
+    lines=conn.execute('select amount,seasonal_pack_main_id::text from rental_booking_items where booking_id=%s and rental_inventory_id=%s order by amount',(result['id'],generic)).fetchall()
+    assert [line[0] for line in lines]==([0,0,5] if with_skis else [5,5,5])
+    assert {line[1] for line in lines if line[1]}==(set(ids) if with_skis else set())
+    assert conn.execute('select count(*) from rental_booking_items where booking_id=%s and is_generic',(result['id'],)).fetchone()[0]==3
+
+
+def test_multiple_generic_poles_return_one_pair_at_a_time_and_retry_is_idempotent(setup):
+    conn,ids,*_=setup
+    generic,group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(group,))
+    today=conn.execute("select (now() at time zone 'Europe/Rome')::date").fetchone()[0].isoformat()
+    data=payload(ids,starts_on=today,ends_on=today,inventory_ids=[generic],pole_quantity=3,expected_total='15')
+    first=confirm(conn,data); other=confirm(conn,data)
+    for count in range(1,4):
+        request=str(uuid4())
+        for _ in range(2):
+            conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_A,request,'1',first['id']))
+        assert conn.execute('select count(*) from rental_booking_items where booking_id=%s and returned_at is not null',(first['id'],)).fetchone()[0]==count
+    assert conn.execute('select count(*) from rental_booking_items where booking_id=%s and returned_at is null',(other['id'],)).fetchone()[0]==3
+    with pytest.raises(psycopg.errors.RaiseException,match='già rientrati'),conn.transaction():
+        conn.execute('select skirenting_register_generic_return(%s,%s,%s,%s)',(SITE_A,str(uuid4()),'1',first['id']))
+
+
+def test_extra_poles_without_a_tariff_cannot_be_confirmed_as_free(setup):
+    conn,ids,*_=setup
+    generic=conn.execute("select id::text from rental_inventory where code='1' and is_generic").fetchone()[0]
+    with pytest.raises(psycopg.errors.RaiseException,match='Tariffa non configurata'),conn.transaction():
+        confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[ids[0],generic],pole_quantity=2,expected_total='20'))
+
+
+def test_daily_pack_rate_tiers_preserve_single_prices_and_restrict_categories(setup):
+    conn,ids,_,group=setup
+    single=conn.execute('select daily_price_1_day,daily_price_7_plus_days from rental_rates where group_id=%s',(group,)).fetchone()
+    assert conn.execute('select pack_price_1_day,pack_price_7_plus_days from rental_rates where group_id=%s',(group,)).fetchone()==(None,None)
+    conn.execute('update rental_rates set pack_price_1_day=30,pack_price_2_days=28,pack_price_3_days=25,pack_price_4_days=24,pack_price_5_days=23,pack_price_6_days=22,pack_price_7_plus_days=0 where group_id=%s',(group,))
+    assert conn.execute('select daily_price_1_day,daily_price_7_plus_days from rental_rates where group_id=%s',(group,)).fetchone()==single
+    assert conn.execute('select pack_price_1_day,pack_price_7_plus_days from rental_rates where group_id=%s',(group,)).fetchone()==(30,0)
+    conn.execute('update rental_rates set pack_price_2_days=null where group_id=%s',(group,))
+    assert conn.execute('select pack_price_2_days from rental_rates where group_id=%s',(group,)).fetchone()[0] is None
+    poles=conn.execute("select group_id from rental_inventory where code='1'").fetchone()[0]
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute('update rental_rates set pack_price_1_day=5 where group_id=%s',(poles,))
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute('update rental_rates set pack_price_1_day=-1 where group_id=%s',(group,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('set local role anon')
+        conn.execute('select pack_price_1_day from rental_rates')
+
+
+@pytest.mark.parametrize('end,column,price,days',[
+    ('2026-12-01','pack_price_1_day',30,1),('2026-12-02','pack_price_2_days',28,2),
+    ('2026-12-03','pack_price_3_days',25,3),('2026-12-08','pack_price_7_plus_days',15,8),
+])
+def test_daily_pack_confirmation_saves_single_pack_price_and_included_boots(setup,end,column,price,days):
+    conn,ids,*_=setup
+    _,selection=seasonal_setup(conn,ids)
+    boot=selection['inventory_ids'][1]
+    group=conn.execute('select group_id from rental_inventory where id=%s',(ids[0],)).fetchone()[0]
+    conn.execute(sql.SQL('update rental_rates set {}=%s where group_id=%s').format(sql.Identifier(column)),(price,group))
+    data=payload(ids,inventory_ids=[ids[0],boot],ends_on=end,expected_total=str(price*days))
+    booking_id=str(uuid4())
+    result=confirm(conn,data,booking_id)
+    assert result['total']==price*days
+    lines=conn.execute('select rental_inventory_id::text,daily_price,amount,seasonal_pricing,seasonal_pack_main_id::text from rental_booking_items where booking_id=%s',(booking_id,)).fetchall()
+    main=next(line for line in lines if line[0]==ids[0]);included=next(line for line in lines if line[0]==boot)
+    assert main[1:]==(price,price*days,'pack',ids[0])
+    assert included[1:]==(0,0,'included',ids[0])
+    conn.execute(sql.SQL('update rental_rates set {}=999 where group_id=%s').format(sql.Identifier(column)),(group,))
+    assert confirm(conn,data,booking_id)['total']==price*days
+
+
+def test_daily_pack_saves_multiple_pole_lines_and_uses_only_best_discount(setup):
+    conn,ids,hotel,group=setup
+    _,selection=seasonal_setup(conn,ids)
+    generic,pole_group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set pack_price_1_day=30 where group_id=%s',(group,))
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(pole_group,))
+    conn.execute("insert into promotions(name,promotion_date,discount_percent) values('Pack speciale','2026-12-01',25)")
+    data=payload(ids,ends_on='2026-12-01',inventory_ids=[ids[0],selection['inventory_ids'][1],generic],
+                 pole_quantity=3,hotel_id=hotel,expected_total='30',
+                 payment={'amount':'10','payment_method':'Contanti','paid_at':'2026-11-23T10:00:00Z'})
+    result=confirm(conn,data)
+    assert result['total']==30 and result['paid_amount']==10 and result['balance']==20
+    assert conn.execute('select promotion_name,discount_percent from rental_bookings where id=%s',(result['id'],)).fetchone()==('Pack speciale',25)
+    lines=conn.execute('select amount,seasonal_pricing from rental_booking_items where booking_id=%s and rental_inventory_id=%s order by amount',(result['id'],generic)).fetchall()
+    assert lines==[(0,'included'),(5,'single'),(5,'single')]
+
+
+def test_daily_pack_missing_or_stale_price_does_not_write_booking(setup):
+    conn,ids,_,group=setup
+    _,selection=seasonal_setup(conn,ids)
+    booking_id=str(uuid4())
+    data=payload(ids,ends_on='2026-12-01',inventory_ids=selection['inventory_ids'][:2],expected_total='30')
+    with pytest.raises(psycopg.errors.RaiseException,match='Tariffa non configurata'),conn.transaction():
+        confirm(conn,data,booking_id)
+    conn.execute('update rental_rates set pack_price_1_day=40 where group_id=%s',(group,))
+    with pytest.raises(psycopg.errors.RaiseException,match='Listino o sconto cambiati'),conn.transaction():
+        confirm(conn,data,booking_id)
+    assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0]==0
+
+
+def test_daily_pack_does_not_use_wrong_boots_or_share_a_boot_between_skis(setup):
+    conn,ids,_,group=setup
+    _,selection=seasonal_setup(conn,ids)
+    boot=selection['inventory_ids'][1]
+    conn.execute('update rental_rates set pack_price_1_day=30 where group_id=%s',(group,))
+    data=payload(ids,ends_on='2026-12-01',inventory_ids=[*ids,boot],expected_total='50')
+    result=confirm(conn,data)
+    assert result['total']==50
+    assert conn.execute("select count(*) from rental_booking_items where booking_id=%s and seasonal_pricing='pack'",(result['id'],)).fetchone()[0]==1
+
+
+
+def test_daily_mixed_ski_and_snowboard_packs_keep_boots_compatible_and_poles_with_skis(setup):
+    conn,ids,_,group=setup
+    _,selection=seasonal_setup(conn,ids)
+    snow_members=[]
+    for code,category,details in [('SNOW-DAILY','snowboard',{'length_cm':155}),('BOOT-SNOW-DAILY','snowboard_boots',{'size_label':'26'})]:
+        category_id=str(conn.execute('select id from material_categories where code=%s',(category,)).fetchone()[0])
+        body={'category_id':category_id,'new_group':f'Gruppo {code}','code':code,
+              'new_variant':{'brand':'Marca','model':code,'details':details}}
+        snow_members.append(conn.execute('select skirenting_create_rental_item(%s,%s)',(SITE_A,Jsonb(body))).fetchone()[0]['id'])
+    conn.execute('update rental_rates set pack_price_1_day=30 where group_id=%s',(group,))
+    conn.execute('update rental_rates set pack_price_1_day=40 where group_id=(select group_id from rental_inventory where id=%s)',(snow_members[0],))
+    generic,pole_group=conn.execute("select id::text,group_id from rental_inventory where code='1' and is_generic").fetchone()
+    conn.execute('update rental_rates set daily_price_1_day=5 where group_id=%s',(pole_group,))
+    data=payload(ids,ends_on='2026-12-01',inventory_ids=[ids[0],*snow_members,selection['inventory_ids'][1],generic],pole_quantity=3,expected_total='80')
+    result=confirm(conn,data)
+    assert result['total']==80
+    rows=conn.execute('select rental_inventory_id::text,seasonal_pack_main_id::text,amount from rental_booking_items where booking_id=%s',(result['id'],)).fetchall()
+    assert next(row for row in rows if row[0]==selection['inventory_ids'][1])[1:]==(ids[0],0)
+    assert next(row for row in rows if row[0]==snow_members[1])[1:]==(snow_members[0],0)
+    assert sorted(row[2] for row in rows if row[0]==generic)==[0,5,5]

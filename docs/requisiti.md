@@ -97,6 +97,22 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 
 ## Controlli da fare più avanti
 
+- Bastoncini: codice generico unico 1, condiviso fra sedi e riutilizzabile in
+  noleggi giornalieri e stagionali contemporanei. Prezzo configurabile nei due
+  listini; può comparire più volte nella stessa prenotazione, con una riga per
+  paio. Un paio per ogni paio di sci è incluso a zero, anche senza scarponi;
+  le paia in eccedenza seguono il listino. Rientro
+  distinto per prenotazione, senza usare il solo codice per scegliere il cliente.
+
+- Noleggi stagionali: nuova scheda, elenco consultabile per stagione e listino
+  dedicato in Gestione. Una data di consegna globale per stagione, interpretata
+  come restituzione e proposta a tutti i nuovi stagionali. Prezzi totali per
+  gruppo, singolo oppure pack sci/snowboard + scarponi compatibili. I bastoncini
+  sono facoltativi e inclusi solo nel pack sci.
+  Riconoscimento automatico dai codici selezionati, senza scelta manuale e senza
+  riutilizzare esemplari. Mantengono clienti, note, acconti, saldi e rientri del
+  flusso esistente. Le prenotazioni confermate conservano date e importi storici.
+
 - [ ] Controllare la gestione del materiale da sistemare e delle riparazioni:
   coerenza tra stato dell'articolo in magazzino (`rental_inventory.status`),
   interventi aperti in `material_repairs`, elenco Riparazioni e conteggio nella card.

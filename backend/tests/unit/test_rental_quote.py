@@ -9,7 +9,7 @@ from app.services.rental_quote_service import calculate_quote
 ITEM_ID = '10000000-0000-0000-0000-000000000001'
 GROUP_ID = '20000000-0000-0000-0000-000000000001'
 ITEM = {'id': ITEM_ID, 'code': '+001', 'group': {'id': GROUP_ID, 'name': 'RACE'},
-        'variant': {'brand': 'Marca', 'model': 'Modello'}}
+        'variant': {'brand': 'Marca', 'model': 'Modello', 'category': {'code': 'ski'}}}
 RATE = {'group_id': GROUP_ID, 'daily_price_1_day': 20, 'daily_price_2_days': 18,
         'daily_price_3_days': 16, 'daily_price_4_days': 15, 'daily_price_5_days': 14,
         'daily_price_6_days': 12, 'daily_price_7_plus_days': 10}
@@ -113,3 +113,70 @@ def test_period_promotions_do_not_apply_to_multi_day_rentals_or_accumulate():
     multi=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-03',inventory_ids=[ITEM_ID])
     hotel={'id':GROUP_ID,'name':'Albergo','discount':15}
     assert calculate_quote(multi,[ITEM],[RATE],hotel,[promo,weekly]).total == Decimal('40.80')
+
+
+@pytest.mark.parametrize('with_skis', [False, True])
+def test_generic_poles_are_free_with_skis_and_use_their_rate_alone(with_skis):
+    pole_id='30000000-0000-0000-0000-000000000001'
+    pole_group='40000000-0000-0000-0000-000000000001'
+    poles={'id':pole_id,'code':'1','is_generic':True,'group':{'id':pole_group,'name':'Bastoncini generici'},
+           'variant':{'brand':'Generico','model':'Bastoncini','category':{'code':'poles'}}}
+    selected=[ITEM,poles] if with_skis else [poles]
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-03',inventory_ids=[item['id'] for item in selected])
+    rates=[RATE] if with_skis else [{'group_id':pole_group,'daily_price_3_days':3}]
+    result=calculate_quote(data,selected,rates,None)
+    line=next(line for line in result.items if line.code=='1')
+    assert line.amount==Decimal('0' if with_skis else '9')
+    assert result.total==Decimal('48' if with_skis else '9')
+    assert line.pack_main_id==(UUID(ITEM_ID) if with_skis else None)
+    assert result.missing_rate_codes==[]
+
+
+@pytest.mark.parametrize('count', [1,2,3])
+def test_daily_quote_expands_each_generic_pole_pair_with_individual_prices(count):
+    pole_id='30000000-0000-0000-0000-000000000001'
+    poles={'id':pole_id,'code':'1','is_generic':True,'group':{'id':pole_id,'name':'Bastoncini generici'},
+           'variant':{'brand':'Generico','model':'Bastoncini','category':{'code':'poles'}}}
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[ITEM_ID,pole_id],pole_quantity=count)
+    result=calculate_quote(data,[ITEM,poles],[RATE,{'group_id':pole_id,'daily_price_1_day':5}],None)
+    assert result.total==20+5*(count-1)
+    assert len({line.line_key for line in result.items})==count+1
+    lines=[line for line in result.items if line.code=='1']
+    assert [line.amount for line in lines]==[0]+[5]*(count-1)
+
+
+@pytest.mark.parametrize('category,boots_category', [('ski','ski_boots'),('snowboard','snowboard_boots')])
+@pytest.mark.parametrize('end,pack_column,price,days', [
+    ('2026-12-01','pack_price_1_day',30,1),('2026-12-02','pack_price_2_days',28,2),
+    ('2026-12-03','pack_price_3_days',25,3),('2026-12-07','pack_price_7_plus_days',15,7),
+    ('2026-12-08','pack_price_7_plus_days',15,8),
+])
+def test_daily_pack_uses_group_tier_and_includes_compatible_boots(category,boots_category,end,pack_column,price,days):
+    boot_id='30000000-0000-0000-0000-000000000002'
+    main={**ITEM,'variant':{**ITEM['variant'],'category':{'code':category}}}
+    boot={**ITEM,'id':boot_id,'code':'BOOT','group':{'id':boot_id,'name':'Scarponi'},
+          'variant':{**ITEM['variant'],'category':{'code':boots_category}}}
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on=end,inventory_ids=[ITEM_ID,boot_id])
+    result=calculate_quote(data,[main,boot],[{**RATE,pack_column:price}],None)
+    assert result.total==price*days and result.missing_rate_codes==[]
+    assert result.items[0].price_mode=='pack' and result.items[0].daily_price==price
+    assert result.items[1].price_mode=='included' and result.items[1].amount==0
+    assert result.items[1].pack_main_id==UUID(ITEM_ID)
+
+
+def test_daily_pack_matches_each_boot_once_and_missing_pack_price_blocks_total():
+    boot_id='30000000-0000-0000-0000-000000000002'
+    second_id='10000000-0000-0000-0000-000000000002'
+    boot={**ITEM,'id':boot_id,'code':'BOOT','variant':{**ITEM['variant'],'category':{'code':'ski_boots'}}}
+    second={**ITEM,'id':second_id,'code':'SCI2'}
+    data=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[ITEM_ID,second_id,boot_id])
+    result=calculate_quote(data,[ITEM,second,boot],[{**RATE,'pack_price_1_day':30}],None)
+    assert result.total==50
+    assert [line.price_mode for line in result.items]==['pack','single','included']
+    missing=calculate_quote(data,[ITEM,second,boot],[RATE],None)
+    assert missing.total is None and missing.missing_rate_codes==['+001']
+    free=calculate_quote(data,[ITEM,second,boot],[{**RATE,'pack_price_1_day':0}],None)
+    assert free.total==20
+    wrong={**boot,'variant':{**boot['variant'],'category':{'code':'snowboard_boots'}}}
+    result=calculate_quote(data,[ITEM,second,wrong],[{**RATE,'pack_price_1_day':30}],None)
+    assert result.total==60 and all(line.price_mode=='single' for line in result.items)

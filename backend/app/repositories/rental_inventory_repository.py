@@ -11,7 +11,7 @@ VARIANT_SELECT = (
     "accessory_details(size_label)"
 )
 ITEM_SELECT = (
-    "id,code,serial_number,purchase_price,legacy_sold_price,status,is_rentable,is_bookable,notes,"
+    "id,code,serial_number,purchase_price,legacy_sold_price,status,is_rentable,is_bookable,is_generic,notes,"
     "group:material_groups(id,name),"
     f"variant:material_variants({VARIANT_SELECT})"
 )
@@ -77,6 +77,7 @@ def transfer_item(client: httpx.Client, item_id: UUID, source: UUID, destination
 
 
 def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: date, ends_on: date) -> set[str]:
+    items = [item for item in items if not item.get('is_generic', False)]
     blocked = set()
     for start in range(0, len(items), 100):
         identifiers = ','.join(str(item['id']) for item in items[start:start + 100])
@@ -92,6 +93,12 @@ def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: dat
             ):
                 blocked.add(row['rental_inventory_id'])
     return blocked
+
+
+def list_generic_items(client: httpx.Client) -> list[dict]:
+    return read_all(client, 'rental_inventory', {
+        'select': ITEM_SELECT, 'is_generic': 'eq.true', 'order': 'id',
+    })
 
 
 def list_items_for_locations(client: httpx.Client, location_ids: list[str]) -> list[dict]:

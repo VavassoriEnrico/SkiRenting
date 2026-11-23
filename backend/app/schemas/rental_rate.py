@@ -17,6 +17,13 @@ class RentalRateUpdate(BaseModel):
     daily_price_5_days: Price | None
     daily_price_6_days: Price | None
     daily_price_7_plus_days: Price | None
+    pack_price_1_day: Price | None = None
+    pack_price_2_days: Price | None = None
+    pack_price_3_days: Price | None = None
+    pack_price_4_days: Price | None = None
+    pack_price_5_days: Price | None = None
+    pack_price_6_days: Price | None = None
+    pack_price_7_plus_days: Price | None = None
 
 
 class RateGroupRead(BaseModel):

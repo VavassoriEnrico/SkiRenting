@@ -18,20 +18,55 @@ def calculate_quote(data: RentalQuoteRequest, items: list[dict], rates: list[dic
     )
     by_group = {str(rate['group_id']): rate for rate in rates}
     by_item = {str(item['id']): item for item in items}
+    pack_column = column.replace('daily_price_', 'pack_price_')
+    main_boots = {}
+    boot_mains = {}
+    # Ogni attrezzo usa i primi scarponi compatibili ancora liberi.
+    for identifier in data.inventory_ids:
+        category = by_item[str(identifier)]['variant']['category']['code']
+        boot_category = {'ski': 'ski_boots', 'snowboard': 'snowboard_boots'}.get(category)
+        if not boot_category:
+            continue
+        boot_id = next((candidate for candidate in data.inventory_ids
+                        if candidate not in boot_mains
+                        and by_item[str(candidate)]['variant']['category']['code'] == boot_category), None)
+        if boot_id:
+            main_boots[identifier] = boot_id
+            boot_mains[boot_id] = identifier
     lines = []
     missing = []
+    ski_ids = [identifier for identifier in data.inventory_ids
+               if by_item[str(identifier)]['variant']['category']['code'] == 'ski']
+    if data.pole_quantity > 1 and not any(item.get('is_generic') for item in items):
+        raise HTTPException(422, 'La quantità è ammessa solo per il codice generico 1.')
+    pole_index = 0
     for inventory_id in data.inventory_ids:
         item = by_item[str(inventory_id)]
-        raw_price = by_group.get(str(item['group']['id']), {}).get(column)
-        price = Decimal(str(raw_price)) if raw_price is not None else None
-        amount = price * days if price is not None else None
-        if price is None:
-            missing.append(item['code'])
-        lines.append(QuoteItem(
-            inventory_id=inventory_id, code=item['code'], brand=item['variant']['brand'],
-            model=item['variant']['model'], group_name=item['group']['name'],
-            daily_price=price, amount=amount,
-        ))
+        quantity = data.pole_quantity if item.get('is_generic') else 1
+        for pair in range(quantity):
+            main_id = boot_mains.get(inventory_id)
+            if item['variant']['category']['code'] == 'poles':
+                if pole_index < len(ski_ids):
+                    main_id = ski_ids[pole_index]
+                pole_index += 1
+            is_pack = inventory_id in main_boots
+            raw_price = 0 if main_id else by_group.get(str(item['group']['id']), {}).get(pack_column if is_pack else column)
+            price = Decimal(str(raw_price)) if raw_price is not None else None
+            amount = price * days if price is not None else None
+            if price is None and item['code'] not in missing:
+                missing.append(item['code'])
+            lines.append(QuoteItem(
+                inventory_id=inventory_id, code=item['code'], brand=item['variant']['brand'],
+                model=item['variant']['model'], group_name=item['group']['name'],
+                daily_price=price, amount=amount,
+                line_key=f'{inventory_id}:{pair + 1}' if item.get('is_generic') else str(inventory_id),
+                price_mode='included' if main_id else 'pack' if is_pack else 'single',
+                pack_main_id=inventory_id if is_pack else main_id,
+            ))
+    pack_mains = {line.pack_main_id for line in lines if line.pack_main_id}
+    for line in lines:
+        if line.inventory_id in pack_mains:
+            line.pack_main_id = line.inventory_id
     percent = Decimal(str(hotel['discount'])) if hotel else Decimal('0')
     promotion = best_promotion_for_day(promotions or [], data.starts_on) if days == 1 else None
     # A parità di percentuale resta lo sconto albergo, senza cumulo.
@@ -71,7 +106,7 @@ def get_quote(client: httpx.Client, user_id: UUID, location_id: UUID, data: Rent
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01', '42703', 'PGRST204'):
-            raise HTTPException(503, 'Verifica le query 009 (sconto alberghi), 010 (tariffe) e 020 (promozioni) e 022 (periodi promozionali) in Supabase.') from error
+            raise HTTPException(503, 'Verifica 009, 010 e 027_daily_pack_rates.sql per il listino, 020 e 022 per le promozioni in Supabase.') from error
         raise HTTPException(503, 'Impossibile calcolare i prezzi. Riprova.') from error
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Impossibile raggiungere Supabase per calcolare i prezzi.') from error
