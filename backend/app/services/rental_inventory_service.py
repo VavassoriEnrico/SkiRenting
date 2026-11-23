@@ -6,7 +6,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.repositories import rental_inventory_repository, material_repair_repository
-from app.schemas.rental_inventory import RentalInventoryRead, RentalItemCreate
+from app.schemas.rental_inventory import RentalInventoryRead, RentalInventorySummary, RentalItemCreate
 from app.services.operator_service import get_authorized_location, get_operator_session
 
 
@@ -19,13 +19,22 @@ def get_inventory(
         raise HTTPException(422, 'Indica entrambe le date con rientro non precedente all’inizio.')
     try:
         items = rental_inventory_repository.list_items(client, location_id)
+        summary = None
+        today = datetime.now(ZoneInfo('Europe/Rome')).date()
         if available_only:
-            today = datetime.now(ZoneInfo('Europe/Rome')).date()
             blocked = rental_inventory_repository.unavailable_item_ids(client, items, starts_on or today, ends_on or today)
             items = [item for item in items if item['id'] not in blocked]
             repairs = material_repair_repository.open_for_items(client,items)
             items = [{**item,'open_repair':repairs.get(item['id'])} for item in items]
+        else:
+            rented_ids = rental_inventory_repository.unavailable_item_ids(client, items, today, today)
+            repairs = material_repair_repository.open_for_items(client, items)
+            summary = RentalInventorySummary(
+                currently_rented=len(rented_ids),
+                currently_in_repair=sum(item['status'] == 'maintenance' or item['id'] in repairs for item in items),
+            )
         return RentalInventoryRead(
+            summary=summary,
             categories=rental_inventory_repository.list_categories(client),
             items=items,
         )

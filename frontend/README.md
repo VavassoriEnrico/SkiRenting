@@ -278,7 +278,7 @@ articoli occupati e le manutenzioni prive di intervento aperto restano non selez
 Magazzino contiene anche **Magazzino generale noleggi** (`/magazzino-generale`): vista
 in sola lettura del materiale da noleggio di tutte le sedi autorizzate, indipendente
 dalla sede selezionata nella sidebar. Raggruppa per categoria e caratteristiche
-fisiche (marca, modello, anno, misure, raggio, taglia, colore ecc.), anche quando
+fisiche (marca, modello, anno, misure, taglia ecc.), anche quando
 il catalogo contiene varianti equivalenti in gruppi tariffari diversi. La ricerca
 comprende codici, sede e gruppo; cercare un codice conserva tutti gli esemplari
 del gruppo. Aprendo una riga, il dialogo mostra gli esemplari separati per sede,
@@ -295,3 +295,20 @@ con i singoli prezzi nel dettaglio della sede. Null viene mostrato come «Da def
 e resta distinto da zero. Le giacenze esaurite sono escluse dall'API.
 Il modello vendita attuale è per variante/sede/quantità, senza codici dei singoli
 pezzi: il dettaglio mostra quantità, prezzo e note senza inventare esemplari.
+
+
+La scheda del materiale nel magazzino noleggio locale include la sezione
+**Tariffa**, chiusa inizialmente ed espandibile. Alla prima apertura legge il
+listino condiviso `/rental-rates` per il gruppo dell'articolo e mostra tutte le
+sette fasce in €/giorno, prima degli sconti. I valori null o il gruppo privo di
+listino sono «Non impostata», zero resta 0 €. Errori e ritentativi sono separati
+dalla lettura del magazzino; alla chiusura della scheda le richieste sono annullate.
+
+
+In «Esemplari e codici univoci» il pulsante **Vedi** apre la scheda del singolo
+codice: caratteristiche, stato, matricola, note e prezzi dell'esemplare, numero
+di noleggi, riparazioni concluse e noleggi dall'ultima riparazione. Il popup di
+modello resta aperto sotto la scheda; Esc/Torna al materiale chiude solo questa.
+Lo spostamento di sede è disponibile nella scheda individuale, dopo il caricamento.
+I conteggi vengono letti all'apertura, con retry e annullamento delle richieste
+quando si chiude o cambia sede. Non sono calcolati per modello o quantità.

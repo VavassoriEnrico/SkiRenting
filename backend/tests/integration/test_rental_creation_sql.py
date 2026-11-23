@@ -77,7 +77,7 @@ def payload(db, code='+001'):
     return {
         'category_id': str(category), 'group_id': str(group), 'code': code,
         'new_variant': {'brand': 'Test', 'model': 'Sci', 'year': 2026,
-                        'details': {'length_cm': 164, 'radius_m': 12.5}},
+                        'details': {'length_cm': 164}},
     }
 
 
@@ -100,14 +100,13 @@ def test_new_category_new_group_and_boot_fields(db):
         'new_category': {'name': 'Scarponi speciali', 'code': 'special_boots', 'detail_type': 'boots'},
         'new_group': 'Speciali', 'code': 'BOOT001',
         'new_variant': {'brand': 'Test', 'model': 'Boot', 'details': {
-            'size_label': '24.5', 'shoe_size_eu': '38', 'foot_length_cm': 24.5,
-            'sole_length_mm': 285,
+            'size_label': '24.5',
         }},
     }
     result = create(db, body)
-    details = db.execute('select size_system,sole_length_mm from boot_details where variant_id=%s',
+    details = db.execute('select size_label from boot_details where variant_id=%s',
                          (result['variant_id'],)).fetchone()
-    assert details == ('unknown', 285)
+    assert details == ('24.5',)
 
 
 def test_existing_variant_does_not_change_shared_model(db):
@@ -159,8 +158,8 @@ def test_anon_and_direct_table_writes_are_rejected(db):
 
 
 @pytest.mark.parametrize('family,details,table', [
-    ('snowboard', {'length_cm': 150, 'radius_m': 9, 'style': 'Base'}, 'snowboard_details'),
-    ('helmet', {'size_label': 'M', 'color': 'Blu'}, 'helmet_details'),
+    ('snowboard', {'length_cm': 150}, 'snowboard_details'),
+    ('helmet', {'size_label': 'M'}, 'helmet_details'),
     ('poles', {'height_cm': 120}, 'pole_details'),
     ('goggles', {'lens': 'S2'}, 'goggle_details'),
     ('accessory', {'size_label': 'Unica'}, 'accessory_details'),

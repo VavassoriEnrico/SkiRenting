@@ -379,3 +379,26 @@ prezzo unitario nullable e note. Usa lo stesso contesto JWT e letture paginate;
 non legge materiale da noleggio né riparazioni e non effettua scritture.
 Richiede la tabella già prevista dalla migrazione 002, senza nuove query.
 Il modello attuale non contiene codici per singolo pezzo, né righe di storico vendite.
+
+La lettura completa del magazzino noleggio di una sede include `summary` con
+`currently_rented` (esemplari distinti impegnati oggi secondo la disponibilità,
+compresi i rientri ancora mancanti) e `currently_in_repair` (stato maintenance o
+intervento aperto). Esclude i pezzi già restituiti dai noleggiati e non conta le
+sole prenotazioni future. I conteggi precedono i filtri della tabella frontend.
+La lettura `available_only=true` mantiene il percorso di selezione senza riepilogo.
+
+
+`GET /api/v1/locations/{location_id}/rental-inventory/{item_id}` verifica sede e
+appartenenza corrente dell'esemplare, quindi restituisce `item` e `statistics`
+(`rental_count`, `repair_count`, `rentals_since_last_repair`, `last_repair_at`).
+Conta prenotazioni distinte già iniziate, non annullate, anche concluse e rientrate;
+le sole prenotazioni future non aumentano il totale. Conta interventi completati,
+non aperti o annullati. Per il confronto cronologico usa la consegna se nota,
+altrimenti il momento più recente tra creazione prenotazione e inizio giornata
+italiana della data iniziale. Questo distingue la conferma di un nuovo noleggio
+dalla riparazione conclusa prima della conferma nello stesso giorno.
+Senza interventi conclusi, il conteggio dall'ultima riparazione è il totale.
+Le letture sono paginate e protette dalle RLS esistenti: comprendono lo storico
+accessibile all'operatore anche nelle altre sedi, senza filtro sulla sede storica.
+L'endpoint non scrive dati e non richiede nuove migrazioni. I vecchi noleggi non
+ancora importati non partecipano ai conteggi.

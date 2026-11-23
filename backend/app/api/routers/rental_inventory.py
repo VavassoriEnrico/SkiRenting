@@ -12,6 +12,8 @@ from app.schemas.rental_inventory import (
     RentalItemCreated,
 )
 from app.services import rental_inventory_service
+from app.schemas.rental_item_details import RentalItemDetailsRead
+from app.services.rental_item_details_service import get_item_details
 
 router = APIRouter(prefix="/locations", tags=["rental-inventory"])
 
@@ -44,3 +46,8 @@ def transfer_item(
     return rental_inventory_service.transfer_item(
         client, user_id, item_id, location_id, data.destination_location_id,
     )
+
+
+@router.get('/{location_id}/rental-inventory/{item_id}', response_model=RentalItemDetailsRead)
+def read_item_details(location_id: UUID, item_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
+    return get_item_details(client, user_id, location_id, item_id)

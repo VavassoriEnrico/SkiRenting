@@ -83,7 +83,6 @@ create table public.material_variants (
   brand text not null check (btrim(brand) <> ''),
   model text not null check (btrim(model) <> ''),
   year smallint check (year between 1900 and 9999),
-  notes text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -97,38 +96,24 @@ create index material_variants_brand_model_idx on public.material_variants(brand
 -- I campi sconosciuti possono restare null, senza inventare misure.
 create table public.ski_details (
   variant_id uuid primary key references public.material_variants(id) on delete cascade,
-  length_cm numeric(6,2) check (length_cm > 0),
-  radius_m numeric(6,2) check (radius_m > 0),
-  style text
+  length_cm numeric(6,2) check (length_cm > 0)
 );
-comment on column public.ski_details.style is
-  'Tipo tecnico opzionale. Non sostituisce il gruppo tariffario assegnato all’esemplare.';
 
 create table public.snowboard_details (
   variant_id uuid primary key references public.material_variants(id) on delete cascade,
-  length_cm numeric(6,2) check (length_cm > 0),
-  radius_m numeric(6,2) check (radius_m > 0),
-  style text
+  length_cm numeric(6,2) check (length_cm > 0)
 );
 
 create table public.boot_details (
   variant_id uuid primary key references public.material_variants(id) on delete cascade,
-  size_label text,
-  size_system text not null default 'unknown'
-    check (size_system in ('unknown', 'mondopoint', 'eu', 'uk', 'us')),
-  shoe_size_eu text,
-  foot_length_cm numeric(5,2) check (foot_length_cm > 0),
-  sole_length_mm smallint check (sole_length_mm > 0)
+  size_label text
 );
 comment on column public.boot_details.size_label is
   'Misura originale, per esempio 24.5. Conservarla senza convertirla automaticamente.';
-comment on column public.boot_details.sole_length_mm is
-  'Lunghezza suola in millimetri. Non ricavarla dalla misura del piede.';
 
 create table public.helmet_details (
   variant_id uuid primary key references public.material_variants(id) on delete cascade,
-  size_label text,
-  color text
+  size_label text
 );
 
 create table public.pole_details (

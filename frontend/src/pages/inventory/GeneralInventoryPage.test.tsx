@@ -15,14 +15,14 @@ const first: GeneralItem = {
   id: 'one', code: 'SKI001', location: locations[0], serial_number: 'SERIAL1', notes: 'Lamina destra',
   status: 'active', is_rentable: true, is_bookable: true, group: { id: 'race', name: 'RACE' },
   variant: {
-    id: 'v1', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, notes: null, category,
-    ski_details: { length_cm: 164, radius_m: 14, style: null }, snowboard_details: null,
+    id: 'v1', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, category,
+    ski_details: { length_cm: 164 }, snowboard_details: null,
     boot_details: null, helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   },
 };
 const second: GeneralItem = {
   ...first, id: 'two', code: 'SKI002', location: locations[1], notes: 'Soletta', serial_number: null,
-  variant: { ...first.variant, id: 'v2', notes: 'Modello importato' },
+  variant: { ...first.variant, id: 'v2' },
   group: { id: 'allmountain', name: 'ALLMOUNTAIN' }, status: 'maintenance',
   open_repair: { id: 'repair', repair_type: 'wax', sent_at: '2026-11-22T10:00:00Z' },
 };
@@ -44,10 +44,8 @@ describe('Raggruppamento generale', () => {
   it.each<Partial<RentalVariant>>([
     { year: 2024 },
     { ski_details: { ...first.variant.ski_details!, length_cm: 180 } },
-    { ski_details: { ...first.variant.ski_details!, radius_m: 16 } },
-    { ski_details: { ...first.variant.ski_details!, style: 'freeride' } },
-    { boot_details: { size_label: '42', size_system: 'eu', shoe_size_eu: '42', foot_length_cm: 27, sole_length_mm: 315 } },
-    { helmet_details: { size_label: 'M', color: 'Rosso' } },
+    { boot_details: { size_label: '42' } },
+    { helmet_details: { size_label: 'M' } },
     { pole_details: { height_cm: 120 } },
     { goggle_details: { lens: 'S2' } },
     { accessory_details: { size_label: 'L' } },
@@ -72,7 +70,7 @@ describe('Magazzino generale noleggi', () => {
     expect(madesimo.getByText('Lamina destra')).toBeTruthy();
     expect(boscone.getByText('SKI002')).toBeTruthy();
     expect(boscone.getByText(/In riparazione/)).toBeTruthy();
-    expect(boscone.getByText(/Modello importato/)).toBeTruthy();
+    expect(screen.queryByText(/Note modello/)).toBeNull();
     expect(screen.queryByRole('button', { name: /Sposta|Salva|Ripara/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Chiudi elenco esemplari' }));
     expect(screen.queryByRole('dialog')).toBeNull();

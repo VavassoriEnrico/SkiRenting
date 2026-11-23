@@ -10,8 +10,8 @@ const customer = { id: 'customer', first_name: 'Mario', last_name: 'Rossi', emai
 const item = {
   id: 'item-one', code: '+001', status: 'active', is_rentable: true, is_bookable: true,
   group: { id: 'race', name: 'RACE' }, variant: {
-    id: 'variant', brand: 'Marca', model: 'Modello', year: null, notes: null,
-    category: { id: 'ski', code: 'ski', name: 'Sci' }, ski_details: { length_cm: 164, radius_m: null, style: null },
+    id: 'variant', brand: 'Marca', model: 'Modello', year: null,
+    category: { id: 'ski', code: 'ski', name: 'Sci' }, ski_details: { length_cm: 164 },
     snowboard_details: null, boot_details: null, helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   },
 };

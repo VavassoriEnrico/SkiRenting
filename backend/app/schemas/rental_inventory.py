@@ -19,21 +19,14 @@ class GroupRead(BaseModel):
 
 class LengthDetails(BaseModel):
     length_cm: float | None = None
-    radius_m: float | None = None
-    style: str | None = None
 
 
 class BootDetails(BaseModel):
     size_label: str | None = None
-    size_system: str
-    shoe_size_eu: str | None = None
-    foot_length_cm: float | None = None
-    sole_length_mm: int | None = None
 
 
 class HelmetDetails(BaseModel):
     size_label: str | None = None
-    color: str | None = None
 
 
 class PoleDetails(BaseModel):
@@ -53,7 +46,6 @@ class VariantRead(BaseModel):
     brand: str
     model: str
     year: int | None = None
-    notes: str | None = None
     category: CategoryRead
     ski_details: LengthDetails | None = None
     snowboard_details: LengthDetails | None = None
@@ -85,7 +77,13 @@ class RentalItemRead(BaseModel):
     variant: VariantRead
 
 
+class RentalInventorySummary(BaseModel):
+    currently_rented: int = Field(ge=0)
+    currently_in_repair: int = Field(ge=0)
+
+
 class RentalInventoryRead(BaseModel):
+    summary: RentalInventorySummary | None = None
     categories: list[CategoryRead]
     items: list[RentalItemRead]
 
@@ -117,14 +115,7 @@ class NewCategory(CreateModel):
 
 class NewDetails(CreateModel):
     length_cm: float | None = Field(default=None, gt=0, le=9999.99)
-    radius_m: float | None = Field(default=None, gt=0, le=9999.99)
-    style: Text | None = None
     size_label: Text | None = None
-    size_system: Literal['unknown', 'mondopoint', 'eu', 'uk', 'us'] | None = None
-    shoe_size_eu: Text | None = None
-    foot_length_cm: float | None = Field(default=None, gt=0, le=999.99)
-    sole_length_mm: int | None = Field(default=None, gt=0, le=32767)
-    color: Text | None = None
     height_cm: float | None = Field(default=None, gt=0, le=9999.99)
     lens: Text | None = None
 
@@ -133,7 +124,6 @@ class NewVariant(CreateModel):
     brand: Text
     model: Text
     year: int | None = Field(default=None, ge=1900, le=9999)
-    notes: str | None = Field(default=None, max_length=5000)
     details: NewDetails
 
 

@@ -11,8 +11,8 @@ const catalog: RentalCatalog = {
   categories: [category, { id: 'boot-id', code: 'ski_boots', name: 'Scarponi sci', detail_type: 'boots' }],
   groups: [{ id: 'race-id', category_id: category.id, name: 'RACE' }],
   variants: [{
-    id: 'variant-id', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, notes: null, category,
-    ski_details: { length_cm: 164, radius_m: 12.5, style: 'Pista' }, snowboard_details: null,
+    id: 'variant-id', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, category,
+    ski_details: { length_cm: 164 }, snowboard_details: null,
     boot_details: null, helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   }],
 };
@@ -62,8 +62,7 @@ describe('Nuovo articolo noleggio', () => {
     change('Campi della categoria *', 'boots');
     change('Nome nuovo gruppo *', 'Speciali');
     change('Marca *', 'Marca'); change('Modello *', 'Modello');
-    change('Misura originale', '24.5'); change('Sistema taglia', 'mondopoint');
-    change('Taglia (scarpe EU)', '38'); change('Taglia (cm)', '24.5'); change('Lunghezza suola (mm)', '285');
+    change('Misura originale', '24.5');
     change('Codice univoco articolo *', '000001');
     change('Numero di serie (S/N)', 'SER123');
     change('Prezzo di acquisto (€)', '125.50');
@@ -71,7 +70,7 @@ describe('Nuovo articolo noleggio', () => {
     await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(1));
     const body = mocks.post.mock.calls[0][2];
     expect(body).toMatchObject({ new_category: { code: 'special_boots', name: 'Scarponi speciali', detail_type: 'boots' }, new_group: 'Speciali', code: '000001', serial_number: 'SER123', purchase_price: 125.5 });
-    expect(body.new_variant.details).toEqual({ size_label: '24.5', size_system: 'mondopoint', shoe_size_eu: '38', foot_length_cm: 24.5, sole_length_mm: 285 });
+    expect(body.new_variant.details).toEqual({ size_label: '24.5' });
     expect(body.new_variant.details.length_cm).toBeUndefined();
   });
 
@@ -81,7 +80,7 @@ describe('Nuovo articolo noleggio', () => {
     expect((screen.getByLabelText('Gruppo noleggio *') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('Marca *') as HTMLInputElement).value).toBe('');
     expect(screen.queryByLabelText('Lunghezza (cm)')).toBeNull();
-    expect(screen.getByLabelText('Lunghezza suola (mm)')).toBeTruthy();
+    expect(screen.getByLabelText('Misura originale')).toBeTruthy();
   });
 
   it('retains the form on duplicate errors and prevents double submissions', async () => {

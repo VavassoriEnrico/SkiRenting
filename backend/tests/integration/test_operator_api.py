@@ -25,6 +25,10 @@ def api(monkeypatch):
 
     def respond(request: httpx.Request):
         state["requests"].append(request)
+        assert 'year,notes,category' not in request.url.params.get('select', '')
+        assert 'radius_m' not in request.url.params.get('select', '')
+        assert 'style' not in request.url.params.get('select', '')
+        assert not any(field in request.url.params.get('select', '') for field in ('shoe_size_eu','foot_length_cm','sole_length_mm','size_system','color'))
         if state.get("unavailable"):
             raise httpx.ConnectError("Test connection failure", request=request)
         assert request.headers["apikey"] == "test-publishable-key"
@@ -72,6 +76,17 @@ def api(monkeypatch):
                 rows = [r for r in rows if request.url.params['ends_on'] == f"eq.{r['ends_on']}"]
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=rows[offset:offset + 300])
+        if request.url.path == '/rest/v1/rental_booking_items' and request.url.params.get('rental_inventory_id','').startswith('eq.'):
+            assert request.method == 'GET'
+            assert request.url.params['booking.status'] == 'in.(confirmed,preparing,active,completed)'
+            assert 'returned_at' not in request.url.params
+            assert 'location_id' not in request.url.params
+            if state.get('item_statistics_error'):
+                return httpx.Response(503,json={'message':'Unavailable'})
+            rows = [row for row in state.get('unit_rentals',[]) if request.url.params['rental_inventory_id'] == f"eq.{row['rental_inventory_id']}"
+                    and row['booking']['status'] != 'cancelled' and row['booking']['starts_on'] <= request.url.params['booking.starts_on'][4:]]
+            offset=int(request.url.params['offset'])
+            return httpx.Response(200,json=rows[offset:offset+300])
         if request.url.path == '/rest/v1/rental_booking_items' and 'rental_inventory_id' in request.url.params:
             assert request.method == 'GET'
             assert request.url.params['returned_at'] == 'is.null'
@@ -236,6 +251,13 @@ def api(monkeypatch):
                 "variant_id": LOCATION_A, "code": body["p_data"]["code"],
             })
         if request.url.path == '/rest/v1/material_repairs':
+            if request.url.params.get('status') == 'eq.completed':
+                assert request.method == 'GET'
+                rows=[r for r in state.get('repairs',[]) if r.get('status')=='completed'
+                      and request.url.params['rental_inventory_id']==f"eq.{r['rental_inventory_id']}"
+                      and r['completed_at'] <= request.url.params['completed_at'][4:]]
+                offset=int(request.url.params['offset'])
+                return httpx.Response(200,json=rows[offset:offset+300])
             if state.get('repair_error'):
                 return httpx.Response(400,json={'code':state['repair_error'],'message':'Riparazione non disponibile'})
             assert request.url.params['status'] == 'eq.in_progress'
@@ -395,7 +417,7 @@ def rental_item(index):
         "variant": {
             "id": LOCATION_A, "brand": "Brand", "model": "Model", "year": 2025,
             "category": {"id": LOCATION_A, "code": "ski", "name": "Sci"},
-            "ski_details": {"length_cm": 164, "radius_m": None, "style": None},
+            "ski_details": {"length_cm": 164},
         },
     }
 
@@ -440,7 +462,7 @@ def test_rental_inventory_empty_does_not_return_demo_items(api):
     client, _ = api
     response = client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory", headers=HEADERS)
     assert response.status_code == 200
-    assert response.json() == {"categories": [], "items": []}
+    assert response.json() == {"categories": [], "items": [], "summary": {"currently_rented": 0, "currently_in_repair": 0}}
 
 
 def test_rental_inventory_database_error(api):
@@ -1528,3 +1550,113 @@ def test_general_sale_inventory_requires_operator_and_locations(api,profile,loca
     state['profile'],state['locations']=profile,locations
     assert client.get('/api/v1/sale-inventory',headers=HEADERS).status_code == 403
     assert not any('inventory' in r.url.path or 'material' in r.url.path for r in state['requests'])
+
+
+def test_local_inventory_summary_counts_distinct_current_rentals_and_repairs(api):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    client,state=api
+    today=datetime.now(ZoneInfo('Europe/Rome')).date().isoformat()
+    state['items']=[rental_item(i) for i in range(8)]
+    state['items'][6]['status']='maintenance'
+    state['repairs']=[{'id': USER_ID, 'rental_inventory_id': state['items'][7]['id'],
+                      'repair_type':'wax','sent_at':'2026-11-22T10:00:00Z'}]
+    state['availability_items']=[
+        {'id':str(i),'rental_inventory_id':state['items'][index]['id'],
+         'returned_at':returned,'delivered_at':delivered,
+         'booking':{'status':status,'starts_on':start,'ends_on':end}}
+        for i,(index,status,start,end,delivered,returned) in enumerate([
+            (0,'confirmed',today,today,None,None),
+            (0,'confirmed',today,today,None,None),
+            (1,'active','2000-01-01','2000-01-02',None,None),
+            (2,'confirmed','2000-01-01','2000-01-02','2000-01-01T10:00:00Z',None),
+            (3,'confirmed','2099-01-01','2099-01-02',None,None),
+            (4,'cancelled',today,today,None,None),
+            (5,'active',today,today,None,'2026-11-22T10:00:00Z'),
+        ])
+    ]
+    response=client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory',headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()['items']) == 8
+    assert response.json()['summary'] == {'currently_rented':3,'currently_in_repair':2}
+
+
+@pytest.mark.parametrize('field,value',[('radius_m',12.5),('style','Pista'),('shoe_size_eu','38'),('foot_length_cm',24.5),('sole_length_mm',285),('size_system','unknown'),('color','Blu')])
+def test_new_rental_material_rejects_removed_detail_fields(api,field,value):
+    client,state=api
+    data={**CREATE_DATA}
+    del data['variant_id']
+    data['new_variant']={'brand':'Test','model':'Test','details':{'length_cm':164,field:value}}
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-inventory',headers=HEADERS,json=data)
+    assert response.status_code == 422
+    assert not any(r.method == 'POST' for r in state['requests'])
+
+
+def test_new_variant_rejects_removed_notes_but_preserves_unit_notes(api):
+    client,state=api
+    data={**CREATE_DATA, 'notes':'Nota esemplare'}
+    del data['variant_id']
+    data['new_variant']={'brand':'Test','model':'Test','details':{'length_cm':164},'notes':'Nota modello'}
+    path=f'/api/v1/locations/{LOCATION_A}/rental-inventory'
+    assert client.post(path,headers=HEADERS,json=data).status_code == 422
+    del data['new_variant']['notes']
+    assert client.post(path,headers=HEADERS,json=data).status_code == 201
+
+
+def test_unit_details_counts_rentals_and_completed_repairs_for_one_code(api):
+    client,state=api
+    item=rental_item(0)
+    state['items']=[item,rental_item(1)]
+    state['unit_rentals']=[
+        {'id':str(i),'booking_id':str(i),'rental_inventory_id':item['id'],
+         'delivered_at':delivered,
+         'booking':{'status':status,'starts_on':start,'created_at':created}}
+        for i,(status,start,created,delivered) in enumerate([
+            ('completed','2000-01-01','2000-01-01T09:00:00Z',None),
+            ('completed','2000-02-01','2000-02-01T09:00:00Z','2000-02-02T10:00:00Z'),
+            ('confirmed','2000-02-02','2000-02-02T13:00:00Z',None),
+            ('cancelled','2000-02-02','2000-02-02T14:00:00Z',None),
+            ('confirmed','2099-01-01','2000-01-01T09:00:00Z',None),
+        ])
+    ]
+    state['unit_rentals'].append({**state['unit_rentals'][0],'id':'duplicate'})
+    state['unit_rentals'].append({**state['unit_rentals'][0],'id':'other','rental_inventory_id':state['items'][1]['id']})
+    state['repairs']=[{'id':str(i),'rental_inventory_id':item['id'],'status':status,'completed_at':timestamp}
+                      for i,(status,timestamp) in enumerate([
+                          ('completed','2000-01-10T10:00:00Z'),('completed','2000-02-02T12:00:00Z'),
+                          ('in_progress',None),('cancelled',None)])]
+    response=client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}",headers=HEADERS)
+    assert response.status_code == 200
+    body=response.json()
+    assert body['item']['code'] == item['code']
+    assert body['statistics'] == {'rental_count':3,'repair_count':2,'rentals_since_last_repair':1,'last_repair_at':'2000-02-02T12:00:00Z'}
+    assert all(r.method == 'GET' for r in state['requests'])
+
+
+def test_unit_details_reads_all_pages_and_uses_total_without_previous_repairs(api):
+    client,state=api
+    item=rental_item(0)
+    state['items']=[item]
+    state['unit_rentals']=[{'id':str(i),'booking_id':str(i),'rental_inventory_id':item['id'],
+        'delivered_at':None,'booking':{'status':'completed','starts_on':'2000-01-01','created_at':'2000-01-01T10:00:00Z'}} for i in range(1305)]
+    response=client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}",headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['statistics'] == {'rental_count':1305,'repair_count':0,'rentals_since_last_repair':1305,'last_repair_at':None}
+    requests=[r for r in state['requests'] if r.url.path.endswith('/rental_booking_items')]
+    assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
+
+
+def test_unit_details_authorization_missing_item_and_errors(api):
+    client,state=api
+    item=rental_item(0)
+    path=f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}"
+    assert client.get(path).status_code == 401
+    assert not state['requests']
+    assert client.get(f"/api/v1/locations/{UNASSIGNED_LOCATION}/rental-inventory/{item['id']}",headers=HEADERS).status_code == 403
+    assert not any('inventory' in r.url.path for r in state['requests'])
+    assert client.get(path,headers=HEADERS).status_code == 404
+    assert not any('rental_booking_items' in r.url.path for r in state['requests'])
+    state['items']=[item]
+    state['item_statistics_error']=True
+    assert client.get(path,headers=HEADERS).status_code == 503

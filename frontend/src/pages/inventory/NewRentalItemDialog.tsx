@@ -60,12 +60,12 @@ export function NewRentalItemDialog({ token, locationId, locationName, initialCa
       setError('Seleziona categoria e gruppo.'); return;
     }
     const details = Object.fromEntries(detailFields[family].map((field) => [field.key,
-      field.key === 'size_system' ? values[field.key] || 'unknown' : !values[field.key]?.trim() ? null : field.type === 'number' ? Number(values[field.key]) : values[field.key].trim(),
+      !values[field.key]?.trim() ? null : field.type === 'number' ? Number(values[field.key]) : values[field.key].trim(),
     ]));
     const body = {
       ...(category === 'new' ? { new_category: newCategory } : { category_id: category }),
       ...(group === 'new' || category === 'new' ? { new_group: groupName } : { group_id: group }),
-      ...(existingVariant ? { variant_id: variant } : { new_variant: { brand: values.brand, model: values.model, year: values.year ? Number(values.year) : null, notes: values.notes || null, details } }),
+      ...(existingVariant ? { variant_id: variant } : { new_variant: { brand: values.brand, model: values.model, year: values.year ? Number(values.year) : null, details } }),
       ...unit, code: unit.code.trim(), serial_number: unit.serial_number.trim() || null, notes: unit.notes.trim() || null,
       purchase_price: unit.purchase_price ? Number(unit.purchase_price) : null,
       legacy_sold_price: unit.legacy_sold_price ? Number(unit.legacy_sold_price) : null,
@@ -106,18 +106,21 @@ export function NewRentalItemDialog({ token, locationId, locationName, initialCa
           <datalist id="rental-models">{[...new Set(variants.filter((entry) => entry.brand === values.brand).map((entry) => entry.model))].sort().map((model) => <option key={model} value={model} />)}</datalist>
           <label>Anno originale<input type="number" min={1900} max={9999} step="1" disabled={existingVariant} value={values.year || ''} onChange={(event) => setValue('year', event.target.value)} /></label>
           {detailFields[family].map((field) => <label key={field.key}>{field.label}{field.options ? <select disabled={existingVariant} value={values[field.key] || 'unknown'} onChange={(event) => setValue(field.key, event.target.value)}>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input disabled={existingVariant} type={field.type || 'text'} maxLength={field.type ? undefined : 200} min={field.type ? field.step === '1' ? 1 : 0.01 : undefined} max={field.max} step={field.type ? field.step || '0.01' : undefined} value={values[field.key] || ''} onChange={(event) => setValue(field.key, event.target.value)} />}</label>)}
-          <label className="rental-form-wide">Note modello<textarea maxLength={5000} disabled={existingVariant} value={values.notes || ''} onChange={(event) => setValue('notes', event.target.value)} /></label>
         </div></fieldset>
         <fieldset className="rental-form-section" disabled={saving}><legend>Esemplare</legend><div className="rental-form-grid">
           <label>Codice univoco articolo *<input aria-label="Codice univoco articolo *" aria-describedby="rental-unit-code-hint" required maxLength={200} value={unit.code} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} onChange={(event) => setUnit({ ...unit, code: event.target.value })} /><small id="rental-unit-code-hint">Conserva zeri iniziali e simboli. Puoi usare il lettore di codici.</small></label>
           <label>Numero di serie (S/N)<input maxLength={200} value={unit.serial_number} onChange={(event) => setUnit({ ...unit, serial_number: event.target.value })} /></label>
-          <label>Stato<select value={unit.status} onChange={(event) => setUnit({ ...unit, status: event.target.value })}>{Object.entries(rentalStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label>Sede<input value={locationName} readOnly /></label>
+          <label className="rental-form-wide">Note esemplare<textarea maxLength={5000} value={unit.notes} onChange={(event) => setUnit({ ...unit, notes: event.target.value })} /></label>
+        </div></fieldset>
+        <fieldset className="rental-form-section" disabled={saving}><legend>Prezzo</legend><div className="rental-form-grid">
           <label>Prezzo di acquisto (€)<input type="number" min="0" max="9999999999.99" step="0.01" value={unit.purchase_price} onChange={(event) => setUnit({ ...unit, purchase_price: event.target.value })} /></label>
           <label>Prezzo venduto storico (€)<input aria-label="Prezzo venduto storico (€)" aria-describedby="rental-legacy-price-hint" type="number" min="0" max="9999999999.99" step="0.01" value={unit.legacy_sold_price} onChange={(event) => setUnit({ ...unit, legacy_sold_price: event.target.value })} /><small id="rental-legacy-price-hint">Opzionale; non è una tariffa di noleggio.</small></label>
+        </div></fieldset>
+        <fieldset className="rental-form-section" disabled={saving}><legend>Stato</legend><div className="rental-form-grid">
+          <label>Stato<select value={unit.status} onChange={(event) => setUnit({ ...unit, status: event.target.value })}>{Object.entries(rentalStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="rental-form-check"><input type="checkbox" checked={unit.is_rentable} onChange={(event) => setUnit({ ...unit, is_rentable: event.target.checked })} />Noleggiabile</label>
           <label className="rental-form-check"><input type="checkbox" checked={unit.is_bookable} onChange={(event) => setUnit({ ...unit, is_bookable: event.target.checked })} />Prenotabile</label>
-          <label className="rental-form-wide">Note esemplare<textarea maxLength={5000} value={unit.notes} onChange={(event) => setUnit({ ...unit, notes: event.target.value })} /></label>
         </div></fieldset>
         {error && <p className="auth-error" role="alert">{error}</p>}
       </div>

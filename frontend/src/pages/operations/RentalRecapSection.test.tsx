@@ -10,8 +10,8 @@ const customer = { id: 'customer', first_name: 'Mario', last_name: 'Rossi', phon
 const item: RentalItem = {
   id: 'item', code: '+001', serial_number: null, status: 'active', is_rentable: true, is_bookable: true, notes: null,
   group: { id: 'group', name: 'RACE' }, variant: {
-    id: 'variant', brand: 'Marca', model: 'Modello', year: null, notes: null,
-    category: { id: 'ski', code: 'ski', name: 'Sci' }, ski_details: { length_cm: 164, radius_m: null, style: null },
+    id: 'variant', brand: 'Marca', model: 'Modello', year: null,
+    category: { id: 'ski', code: 'ski', name: 'Sci' }, ski_details: { length_cm: 164 },
     snowboard_details: null, boot_details: null, helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   },
 };

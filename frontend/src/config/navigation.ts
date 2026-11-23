@@ -15,19 +15,19 @@ export const navigationSections = [
     ],
   },
   {
-    id: 'history', label: 'Storico',
-    items: [
-      { href: '/vendite', label: 'Vendite', icon: ReceiptText },
-      { href: '/noleggi', label: 'Noleggi', icon: CalendarDays },
-    ],
-  },
-  {
     id: 'operations', label: 'Operatività',
     items: [
       { href: '/operativita/noleggi', label: 'Noleggi', icon: CalendarPlus },
       { href: '/operativita/vendite', label: 'Vendite', icon: ShoppingCart },
       { href: '/operativita/rientri', label: 'Rientri', icon: RotateCcw },
       { href: '/operativita/riparazioni', label: 'Riparazioni', icon: Wrench },
+    ],
+  },
+  {
+    id: 'local-inventory', label: 'Magazzino sede',
+    items: [
+      { href: '/materiale-noleggio', label: 'Magazzino noleggi', icon: Package },
+      { href: '/materiale-vendita', label: 'Magazzino vendite', icon: ShoppingBag },
     ],
   },
   {
@@ -38,10 +38,10 @@ export const navigationSections = [
     ],
   },
   {
-    id: 'local-inventory', label: 'Magazzino sede',
+    id: 'history', label: 'Storico',
     items: [
-      { href: '/materiale-noleggio', label: 'Magazzino noleggi', icon: Package },
-      { href: '/materiale-vendita', label: 'Magazzino vendite', icon: ShoppingBag },
+      { href: '/vendite', label: 'Vendite', icon: ReceiptText },
+      { href: '/noleggi', label: 'Noleggi', icon: CalendarDays },
     ],
   },
   {

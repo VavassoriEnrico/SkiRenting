@@ -12,10 +12,10 @@ const text = (value?:string|null) => value?.trim().toLocaleLowerCase('it-IT') ||
 function variantKey(v:RentalVariant):string {
   return JSON.stringify([
       v.category.id,text(v.brand),text(v.model),v.year,
-      v.ski_details && [v.ski_details.length_cm,v.ski_details.radius_m,text(v.ski_details.style)],
-      v.snowboard_details && [v.snowboard_details.length_cm,v.snowboard_details.radius_m,text(v.snowboard_details.style)],
-      v.boot_details && [text(v.boot_details.size_label),text(v.boot_details.size_system),text(v.boot_details.shoe_size_eu),v.boot_details.foot_length_cm,v.boot_details.sole_length_mm],
-      v.helmet_details && [text(v.helmet_details.size_label),text(v.helmet_details.color)],
+      v.ski_details && [v.ski_details.length_cm],
+      v.snowboard_details && [v.snowboard_details.length_cm],
+      v.boot_details && [text(v.boot_details.size_label)],
+      v.helmet_details && [text(v.helmet_details.size_label)],
       v.pole_details?.height_cm ?? null,text(v.goggle_details?.lens),text(v.accessory_details?.size_label),
     ]);
 }

@@ -25,7 +25,7 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
   modello del lettore e formato dei codici da verificare.
 - Categorie: sci, snowboard, scarponi, bastoncini, casco, maschere, kit ARTVA, ciaspole.
 - Sci: base, intermedio, avanzato, top-race, freeride, alpinismo, freestyle;
-  lunghezza, raggio, marca, modello, codice.
+  lunghezza, marca, modello, codice.
 - Snowboard: freeride o base, codice. Altri attributi da definire.
 - Scarponi: millimetri, taglia scarpe, taglia in centimetri, marca, modello, codice.
 - Magazzino vendita, colonne richieste (quantità e prezzo sempre presenti):
@@ -77,3 +77,11 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 - Accesso da più noleggi distanti e da macOS, Linux e Windows tramite browser.
 - React/TypeScript, backend Python/FastAPI e PostgreSQL su Supabase.
 - Aziende/sedi, ruoli e separazione dei dati da definire prima del backend operativo.
+
+
+## Controlli da fare più avanti
+
+- [ ] Controllare la gestione del materiale da sistemare e delle riparazioni:
+  coerenza tra stato dell'articolo in magazzino (`rental_inventory.status`),
+  interventi aperti in `material_repairs`, elenco Riparazioni e conteggio nella card.
+  Verificare anche invio in riparazione e chiusura dell'intervento al nuovo noleggio.

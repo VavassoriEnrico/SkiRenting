@@ -10,8 +10,6 @@ export type CreatedRentalItem = { id: string; category_id: string; group_id: str
 export type DetailField = { key: string; label: string; type?: 'number'; max?: number; step?: string; options?: { value: string; label: string }[] };
 const lengthFields: DetailField[] = [
   { key: 'length_cm', label: 'Lunghezza (cm)', type: 'number', max: 9999.99 },
-  { key: 'radius_m', label: 'Raggio (m)', type: 'number', max: 9999.99 },
-  { key: 'style', label: 'Tipo tecnico' },
 ];
 export const detailTypes: { value: DetailType; label: string }[] = [
   { value: 'ski', label: 'Sci' }, { value: 'snowboard', label: 'Snowboard' }, { value: 'boots', label: 'Scarponi' },
@@ -20,22 +18,13 @@ export const detailTypes: { value: DetailType; label: string }[] = [
 ];
 export const detailFields: Record<DetailType, DetailField[]> = {
   ski: lengthFields, snowboard: lengthFields,
-  boots: [
-    { key: 'size_label', label: 'Misura originale' },
-    { key: 'size_system', label: 'Sistema taglia', options: [
-      { value: 'unknown', label: 'Non specificato' }, { value: 'mondopoint', label: 'Mondopoint' },
-      { value: 'eu', label: 'EU' }, { value: 'uk', label: 'UK' }, { value: 'us', label: 'US' },
-    ] },
-    { key: 'shoe_size_eu', label: 'Taglia (scarpe EU)' },
-    { key: 'foot_length_cm', label: 'Taglia (cm)', type: 'number', max: 999.99 },
-    { key: 'sole_length_mm', label: 'Lunghezza suola (mm)', type: 'number', step: '1', max: 32767 },
-  ],
-  helmet: [{ key: 'size_label', label: 'Taglia' }, { key: 'color', label: 'Colore' }],
+  boots: [{ key: 'size_label', label: 'Misura originale' }],
+  helmet: [{ key: 'size_label', label: 'Taglia' }],
   poles: [{ key: 'height_cm', label: 'Altezza (cm)', type: 'number', max: 9999.99 }],
   goggles: [{ key: 'lens', label: 'Lente' }],
   accessory: [{ key: 'size_label', label: 'Taglia' }],
 };
 export function valuesFromVariant(variant: RentalVariant): Record<string, string> {
   const details = variant.ski_details || variant.snowboard_details || variant.boot_details || variant.helmet_details || variant.pole_details || variant.goggle_details || variant.accessory_details || {};
-  return Object.fromEntries(Object.entries({ brand: variant.brand, model: variant.model, year: variant.year, notes: variant.notes, ...details }).map(([key, value]) => [key, value == null ? '' : String(value)]));
+  return Object.fromEntries(Object.entries({ brand: variant.brand, model: variant.model, year: variant.year, ...details }).map(([key, value]) => [key, value == null ? '' : String(value)]));
 }

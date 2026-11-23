@@ -15,15 +15,15 @@ const category = { id: 'ski', code: 'ski', name: 'Sci' };
 const item: RentalItem = {
   id: 'unit-one', code: '+001', serial_number: null, status: 'active', is_rentable: true, is_bookable: true, notes: null,
   group: { id: 'race', name: 'RACE' }, variant: {
-    id: 'variant-one', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, notes: null, category,
-    ski_details: { length_cm: 164, radius_m: null, style: null }, snowboard_details: null, boot_details: null,
+    id: 'variant-one', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, category,
+    ski_details: { length_cm: 164 }, snowboard_details: null, boot_details: null,
     helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   },
 };
 const inventory: RentalInventory = {
   categories: [category, { id: 'helmet', code: 'helmet', name: 'Caschi' }],
   items: [item, { ...item, id: 'unit-two', code: '0002', status: 'maintenance' }, {
-    ...item, id: 'helmet-one', code: 'H001', variant: { ...item.variant, id: 'helmet-variant', brand: 'POC', model: 'OBEX', category: { id: 'helmet', code: 'helmet', name: 'Caschi' }, ski_details: null, helmet_details: { size_label: 'M', color: 'Nero' } },
+    ...item, id: 'helmet-one', code: 'H001', variant: { ...item.variant, id: 'helmet-variant', brand: 'POC', model: 'OBEX', category: { id: 'helmet', code: 'helmet', name: 'Caschi' }, ski_details: null, helmet_details: { size_label: 'M' } },
   }],
 };
 

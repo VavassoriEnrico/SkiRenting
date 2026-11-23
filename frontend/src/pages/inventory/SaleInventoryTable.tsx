@@ -12,23 +12,16 @@ const brand: Column = { key: 'brand', label: 'Marca', render: (item) => item.bra
 const model: Column = { key: 'model', label: 'Modello', render: (item) => item.model };
 const type: Column = { key: 'type', label: 'Tipo', render: (item) => item.type ?? '—' };
 const length: Column = { key: 'length', label: 'Lunghezza', render: (item) => item.lengthCm == null ? '—' : `${number.format(item.lengthCm)} cm` };
-const radius: Column = { key: 'radius', label: 'Raggio', render: (item) => item.radiusM == null ? '—' : `${number.format(item.radiusM)} m` };
 
 export const saleCategoryColumns: Record<Category | 'all', Column[]> = {
   all: [{ key: 'category', label: 'Tipo', render: (item) => categories.find((entry) => entry.id === item.category)!.label }, brand, model],
   ski: [brand, model, type, length],
   snowboard: [brand, model, type, length],
-  boots: [
-    brand, model,
-    { key: 'shoeSize', label: 'Taglia (scarpe)', render: (item) => item.shoeSize ?? '—' },
-    { key: 'footCm', label: 'Taglia (cm)', render: (item) => item.footCm == null ? '—' : `${number.format(item.footCm)} cm` },
-    { key: 'millimeters', label: 'Millimetri', render: (item) => item.bootMillimeters == null ? '—' : `${number.format(item.bootMillimeters)} mm` },
-  ],
+  boots: [brand, model, { key: 'size', label: 'Misura originale', render: (item) => item.size ?? '—' }],
   poles: [brand, model, { key: 'height', label: 'Altezza', render: (item) => item.heightCm == null ? '—' : `${number.format(item.heightCm)} cm` }],
   helmet: [
     brand, model,
     { key: 'size', label: 'Taglia', render: (item) => item.size ?? '—' },
-    { key: 'color', label: 'Colore', render: (item) => item.color ?? '—' },
   ],
   goggles: [brand, model, { key: 'lens', label: 'Lente', render: (item) => item.lens ?? '—' }],
   avalanche: [brand, model],
@@ -37,8 +30,8 @@ export const saleCategoryColumns: Record<Category | 'all', Column[]> = {
 
 export const saleDetailColumns = {
   ...saleCategoryColumns,
-  ski: [brand, model, type, length, radius],
-  snowboard: [brand, model, type, length, radius],
+  ski: [brand, model, type, length],
+  snowboard: [brand, model, type, length],
 };
 
 export function SaleInventoryTable({ items, category, onReset, onSelect, isWarehouseEmpty = false }: {

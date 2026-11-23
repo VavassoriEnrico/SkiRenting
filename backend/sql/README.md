@@ -24,10 +24,10 @@ non presenti nei file. Gli inventari e il catalogo varianti rimangono vuoti.
 | `material_categories` | ID, codice interno stabile, nome, data creazione |
 | `material_groups` | ID, categoria, nome originale, attivo, data creazione |
 | `material_variants` | ID, categoria, marca, modello, anno originale, note, attivo, date creazione/modifica |
-| `ski_details` | ID variante, lunghezza cm, raggio m, tipo tecnico opzionale |
-| `snowboard_details` | ID variante, lunghezza cm, raggio m, tipo tecnico opzionale |
-| `boot_details` | ID variante, taglia originale, sistema della taglia, taglia EU, lunghezza piede cm, lunghezza suola mm |
-| `helmet_details` | ID variante, taglia, colore |
+| `ski_details` | ID variante, lunghezza cm |
+| `snowboard_details` | ID variante, lunghezza cm |
+| `boot_details` | ID variante, misura originale (`size_label`) |
+| `helmet_details` | ID variante, taglia |
 | `pole_details` | ID variante, altezza cm |
 | `goggle_details` | ID variante, lente |
 | `accessory_details` | ID variante, taglia testuale per ciaspole, ARVA e bob |
@@ -433,3 +433,35 @@ si prova a chiamare direttamente la conferma senza passare dalla finestra UI.
 I lock sugli esemplari coordinano creazione, completamento e conferma noleggio.
 L'intervento viene chiuso al consenso prima dell'aggiunta alla bozza: resta concluso
 anche se successivamente si rimuove l'articolo o si abbandona la bozza.
+
+
+Il campo `radius_m` è stato rimosso dal modello corrente di sci e snowboard:
+letture REST, API, moduli e raggruppamenti non lo usano. La query 002 è allineata
+per nuove installazioni; non rieseguirla sul database esistente. Le colonne del
+progetto esistente vengono rimosse manualmente dall'amministratore. La query 005
+aggiornata non accetta più il raggio tra i dettagli e ignora l'eventuale vecchia
+chiave JSON nel confronto delle varianti.
+
+Anche `style` (Tipo tecnico) è stato rimosso da sci e snowboard: i dettagli ora
+contengono soltanto ID variante e lunghezza. I gruppi tariffari restano invariati.
+Le colonne del database esistente vengono eliminate manualmente; le query 002 e
+005 sono allineate al modello corrente per le nuove installazioni.
+
+
+Per gli scarponi sono rimossi `shoe_size_eu`, `foot_length_cm`, `sole_length_mm`
+e `size_system` da API, letture e moduli. Restano `variant_id` e `size_label`.
+Dopo l'eliminazione manuale delle quattro colonne sul progetto esistente,
+rieseguire **005_create_rental_item.sql** aggiornata: elimina l'aggiunta automatica
+`size_system = unknown` e confronta correttamente le varianti senza i campi rimossi.
+Non rieseguire la query 002 su un database esistente.
+
+
+Rimosso anche `helmet_details.color`: i dettagli dei caschi contengono ID variante
+e taglia. Backend, moduli, schede e raggruppamenti non usano più il colore.
+La query 005 aggiornata ignora i campi dismessi nel confronto delle varianti.
+
+
+Rimosso `material_variants.notes` da schema, API, schede e modulo nuovo articolo.
+Le note degli esemplari, giacenze vendita, riparazioni e prenotazioni restano.
+Dopo aver rimosso la colonna, rieseguire **005_create_rental_item.sql** aggiornata:
+la funzione esistente cercava `v.notes` e inseriva `material_variants.notes`.

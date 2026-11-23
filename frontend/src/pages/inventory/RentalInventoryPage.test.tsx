@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RentalInventoryPage } from './RentalInventoryPage';
@@ -12,8 +12,8 @@ const category = { id: 'ski', code: 'ski', name: 'Sci' };
 const item: RentalItem = {
   id: 'unit-1', code: '+001', serial_number: null, status: 'active', is_rentable: true, is_bookable: true, notes: 'Nota articolo',
   group: { id: 'race', name: 'RACE' }, variant: {
-    id: 'variant-1', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, notes: null, category,
-    ski_details: { length_cm: 164, radius_m: null, style: null }, snowboard_details: null, boot_details: null,
+    id: 'variant-1', brand: 'BLIZZARD', model: 'ANOMALY', year: 2025, category,
+    ski_details: { length_cm: 164 }, snowboard_details: null, boot_details: null,
     helmet_details: null, pole_details: null, goggle_details: null, accessory_details: null,
   },
 };
@@ -21,7 +21,10 @@ const inventory: RentalInventory = { categories: [category], items: [item, { ...
 
 afterEach(cleanup);
 beforeEach(() => {
-  mocks.apiGet.mockReset().mockResolvedValue(inventory);
+  mocks.apiGet.mockReset().mockImplementation((path: string) => {
+    const unit=inventory.items.find(entry=>path.endsWith(`/rental-inventory/${entry.id}`));
+    return Promise.resolve(unit?{item:unit,statistics:{rental_count:3,repair_count:1,rentals_since_last_repair:2,last_repair_at:'2026-01-01T10:00:00Z'}}:inventory);
+  });
   mocks.apiPost.mockReset();
   mocks.auth.location = { id: 'site-a', name: 'Madesimo' };
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); });
@@ -36,8 +39,10 @@ describe('Magazzino noleggio', () => {
     expect(screen.queryByText('+001')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
     expect(screen.getByText('+001')).toBeTruthy();
-    expect(screen.getByText(/In manutenzione/)).toBeTruthy();
-    expect(screen.getByText('Da definire')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Vedi 002'}));
+    expect(await screen.findByText(/In manutenzione/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Chiudi scheda esemplare'}));
+    expect(screen.getByText('Tariffa').closest('details')?.open).toBe(false);
     expect(screen.queryByText(/dati dimostrativi/i)).toBeNull();
   });
 
@@ -88,7 +93,9 @@ describe('Magazzino noleggio', () => {
     render(<RentalInventoryPage />);
     await screen.findByText('ANOMALY');
     fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Sposta +001 di sede' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vedi +001' }));
+    await waitFor(()=>expect((screen.getByRole('button',{name:'Sposta sede'}) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta sede' }));
     const destination = screen.getByLabelText('Sede di destinazione') as HTMLSelectElement;
     expect([...destination.options].map((entry) => entry.value)).toEqual(['', 'site-b']);
     fireEvent.change(destination, { target: { value: 'site-b' } });
@@ -106,7 +113,9 @@ describe('Magazzino noleggio', () => {
     render(<RentalInventoryPage />);
     await screen.findByText('ANOMALY');
     fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Sposta +001 di sede' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vedi +001' }));
+    await waitFor(()=>expect((screen.getByRole('button',{name:'Sposta sede'}) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta sede' }));
     fireEvent.change(screen.getByLabelText('Sede di destinazione'), { target: { value: 'site-b' } });
     const confirm = screen.getByRole('button', { name: 'Conferma spostamento' });
     fireEvent.click(confirm); fireEvent.click(confirm);
@@ -114,7 +123,7 @@ describe('Magazzino noleggio', () => {
     expect((screen.getByRole('button', { name: 'Chiudi scheda materiale' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => fail(new Error('Articolo assegnato a un noleggio aperto')));
     await screen.findByRole('alert');
-    expect(screen.getByText('+001')).toBeTruthy();
+    expect(screen.getAllByText('+001').length).toBeGreaterThan(0);
     expect((screen.getByRole('button', { name: 'Conferma spostamento' }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Annulla spostamento' }));
     expect(screen.queryByLabelText('Sede di destinazione')).toBeNull();
@@ -148,4 +157,61 @@ describe('Magazzino noleggio', () => {
     await act(async () => complete(inventory));
     await waitFor(() => expect(screen.queryByText('ANOMALY')).toBeNull());
   });
+});
+
+
+it('shows site-wide rental and repair counts independently of table filters', async () => {
+  mocks.apiGet.mockResolvedValue({ ...inventory, summary: { currently_rented: 1, currently_in_repair: 1 } });
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  const rented = screen.getByRole('heading', { name: 'Attualmente noleggiati' }).closest('article')!;
+  const repairs = screen.getByRole('heading', { name: 'Attualmente in riparazione' }).closest('article')!;
+  expect(within(rented).getByText('1')).toBeTruthy();
+  expect(within(repairs).getByText('1')).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Abilitati al noleggio' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Varianti' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'nonexistent' } });
+  expect(within(rented).getByText('1')).toBeTruthy();
+  expect(within(repairs).getByText('1')).toBeTruthy();
+});
+
+
+it('opens each physical code with its own characteristics and usage counts', async () => {
+  mocks.apiGet.mockImplementation((path:string)=> {
+    const unit=inventory.items.find(entry=>path.endsWith(`/rental-inventory/${entry.id}`));
+    return Promise.resolve(unit?{item:unit,statistics:{rental_count:unit.id===item.id?3:9,repair_count:1,rentals_since_last_repair:2,last_repair_at:'2026-01-01T10:00:00Z'}}:inventory);
+  });
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.click(screen.getByRole('button',{name:'Apri scheda BLIZZARD ANOMALY 164 cm'}));
+  expect(screen.queryByRole('button',{name:'Sposta +001 di sede'})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Vedi +001'}));
+  let details=within(screen.getByRole('dialog',{name:'Scheda esemplare +001'}));
+  await details.findByText('Numero di noleggi');
+  expect(details.getByText('Numero di noleggi').nextElementSibling?.textContent).toBe('3');
+  expect(details.getByText('Riparazioni concluse').nextElementSibling?.textContent).toBe('1');
+  expect(details.getByText('Noleggi dall’ultima riparazione').nextElementSibling?.textContent).toBe('2');
+  expect(details.getByText('Nota articolo')).toBeTruthy();
+  fireEvent(screen.getByRole('dialog',{name:'Scheda esemplare +001'}),new Event('cancel',{cancelable:true}));
+  expect(screen.queryByRole('dialog',{name:'Scheda esemplare +001'})).toBeNull();
+  expect(screen.getByText('Scheda materiale')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Vedi 002'}));
+  details=within(screen.getByRole('dialog',{name:'Scheda esemplare 002'}));
+  await details.findByText('Numero di noleggi');
+  expect(details.getByText('Numero di noleggi').nextElementSibling?.textContent).toBe('9');
+});
+
+it('does not display fake zero counts on errors and retries the selected unit', async () => {
+  mocks.apiGet.mockImplementation((path:string)=>path.endsWith('/unit-1')?Promise.reject(new Error('Conteggi non disponibili')):Promise.resolve(inventory));
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.click(screen.getByRole('button',{name:'Apri scheda BLIZZARD ANOMALY 164 cm'}));
+  fireEvent.click(screen.getByRole('button',{name:'Vedi +001'}));
+  const details=within(screen.getByRole('dialog',{name:'Scheda esemplare +001'}));
+  expect(await details.findByRole('alert')).toHaveProperty('textContent','Conteggi non disponibili');
+  expect(details.queryByText('Numero di noleggi')).toBeNull();
+  mocks.apiGet.mockResolvedValue({item,statistics:{rental_count:0,repair_count:0,rentals_since_last_repair:0,last_repair_at:null}});
+  fireEvent.click(details.getByRole('button',{name:'Riprova conteggi'}));
+  await details.findByText('Nessuna riparazione precedente');
+  expect(details.getByText('Numero di noleggi').nextElementSibling?.textContent).toBe('0');
 });

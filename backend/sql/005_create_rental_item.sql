@@ -40,7 +40,7 @@ declare
   category_id uuid; group_id uuid; variant_id uuid; item_id uuid;
   category_type text; detail_table text; allowed_keys text[];
   details jsonb; variant_data jsonb; category_data jsonb; group_name text;
-  item_code text; brand_name text; model_name text; variant_year smallint; variant_notes text;
+  item_code text; brand_name text; model_name text; variant_year smallint;
 begin
   -- Verificato anche quando la funzione viene chiamata direttamente dalla Data API.
   if auth.uid() is null then
@@ -126,7 +126,7 @@ begin
   else
     variant_data := p_data->'new_variant';
     brand_name := btrim(variant_data->>'brand'); model_name := btrim(variant_data->>'model');
-    variant_year := (variant_data->>'year')::smallint; variant_notes := nullif(variant_data->>'notes','');
+    variant_year := (variant_data->>'year')::smallint;
     if coalesce(length(brand_name),0) not between 1 and 200
        or coalesce(length(model_name),0) not between 1 and 200
        or jsonb_typeof(variant_data->'details') is distinct from 'object' then
@@ -134,25 +134,22 @@ begin
     end if;
     details := jsonb_strip_nulls(variant_data->'details');
     allowed_keys := case category_type
-      when 'ski' then array['length_cm','radius_m','style'] when 'snowboard' then array['length_cm','radius_m','style']
-      when 'boots' then array['size_label','size_system','shoe_size_eu','foot_length_cm','sole_length_mm']
-      when 'helmet' then array['size_label','color'] when 'poles' then array['height_cm']
+      when 'ski' then array['length_cm'] when 'snowboard' then array['length_cm']
+      when 'boots' then array['size_label']
+      when 'helmet' then array['size_label'] when 'poles' then array['height_cm']
       when 'goggles' then array['lens'] when 'accessory' then array['size_label'] end;
     if exists (select 1 from jsonb_object_keys(details) k where not (k = any(allowed_keys))) then
       raise exception 'Caratteristiche incompatibili con la categoria.' using errcode = '22023';
     end if;
-    if category_type = 'boots' and not (details ? 'size_system') then
-      details := details || '{"size_system":"unknown"}'::jsonb;
-    end if;
     -- Riutilizza una variante identica, senza alterare i modelli già a magazzino.
     execute format('select v.id from public.material_variants v left join public.%I d on d.variant_id = v.id
       where v.category_id = $1 and v.brand = $2 and v.model = $3 and v.year is not distinct from $4
-      and jsonb_strip_nulls(coalesce(to_jsonb(d) - ''variant_id'', ''{}''::jsonb)) = $5
-      and nullif(v.notes, '''') is not distinct from $6 and v.is_active order by v.id limit 1', detail_table)
-      into variant_id using category_id, brand_name, model_name, variant_year, details, variant_notes;
+      and jsonb_strip_nulls(coalesce(to_jsonb(d) - ''variant_id'' - ''radius_m'' - ''style'' - ''shoe_size_eu'' - ''foot_length_cm'' - ''sole_length_mm'' - ''size_system'' - ''color'', ''{}''::jsonb)) = $5
+      and v.is_active order by v.id limit 1', detail_table)
+      into variant_id using category_id, brand_name, model_name, variant_year, details;
     if variant_id is null then
-      insert into public.material_variants(category_id,brand,model,year,notes)
-        values(category_id,brand_name,model_name,variant_year,variant_notes) returning id into variant_id;
+      insert into public.material_variants(category_id,brand,model,year)
+        values(category_id,brand_name,model_name,variant_year) returning id into variant_id;
       execute format('insert into public.%I select * from jsonb_populate_record(null::public.%I, $1)', detail_table, detail_table)
         using details || jsonb_build_object('variant_id',variant_id);
     end if;

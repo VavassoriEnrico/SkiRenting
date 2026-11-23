@@ -443,6 +443,7 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .rental-create-dialog { width: min(880px, calc(100vw - 32px)); }
 .rental-form-section { min-width: 0; margin: 0 0 24px; padding: 0; border: 0; }
 .rental-form-section legend { margin-bottom: 14px; font-weight: 650; font-size: 14px; color: #252c45; }
+.rental-create-dialog .rental-form-section legend { color: #7c3aed; }
 .rental-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .rental-form-grid label { display: flex; min-width: 0; flex-direction: column; gap: 7px; color: #475569; font-size: 12px; font-weight: 550; }
 .rental-form-grid input, .rental-form-grid select, .rental-form-grid textarea { width: 100%; min-width: 0; border: 1px solid #dbe0eb; border-radius: 9px; padding: 10px 12px; background: white; font: inherit; color: #1e293b; }
@@ -621,3 +622,9 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 
 .general-inventory-sort { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; }
 .general-inventory-sort select { padding: 9px 12px; border: 1px solid #c7d2fe; border-radius: 10px; background: white; font: inherit; color: #4338ca; cursor: pointer; }
+
+.inventory-tariff-section > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; font-size: 15px; font-weight: 700; color: #3730a3; padding: 0; }
+.inventory-tariff-section > summary::-webkit-details-marker { display: none; }
+.inventory-tariff-section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.inventory-tariff-section[open] > summary svg { transform: rotate(180deg); }
+.inventory-tariff-body { padding-top: 12px; }

@@ -40,7 +40,7 @@ export function SaleInventoryPage() {
       <section className="rentals-panel" aria-labelledby="inventory-list-title">
         <div className="rentals-panel-heading"><h2 id="inventory-list-title">{categoryLabel}</h2><span className="rentals-count" role="status">{filteredItems.length} {filteredItems.length === 1 ? 'riga' : 'righe'} · {filteredItems.reduce((sum, item) => sum + item.unitCodes.length, 0)} esemplari</span></div>
         <div className="rentals-filters">
-          <div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="inventory-search">Cerca codice, tipo, marca, modello, misura o colore</label><input id="inventory-search" type="search" placeholder="Cerca codice, tipo, marca, modello, misura o colore…" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
+          <div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="inventory-search">Cerca codice, tipo, marca, modello, misura</label><input id="inventory-search" type="search" placeholder="Cerca codice, tipo, marca, modello, misura…" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
           {(query || category !== 'ski') && <button className="reset-filters" type="button" onClick={resetFilters}><X size={14} aria-hidden="true" />Azzera filtri</button>}
         </div>
         <SaleInventoryTable items={filteredItems} category={category} onReset={resetFilters} onSelect={setSelectedItem} isWarehouseEmpty={saleInventory.length === 0} />

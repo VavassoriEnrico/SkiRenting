@@ -9,13 +9,8 @@ type SaleProduct = {
   unitCodes: string[];
   type?: 'Base' | 'Intermedio' | 'Avanzato' | 'Top-race' | 'Freeride' | 'Alpinismo';
   lengthCm?: number;
-  radiusM?: number;
-  bootMillimeters?: number;
-  shoeSize?: string;
-  footCm?: number;
   heightCm?: number;
   size?: string;
-  color?: string;
   lens?: string;
 };
 
@@ -32,8 +27,8 @@ export function filterSaleInventory(items: SaleInventoryItem[], category: Catego
   };
   return items.filter((item) => {
     const fields = [categoryNames[item.category], item.brand, item.model, item.type,
-      item.lengthCm, item.radiusM, item.bootMillimeters, item.shoeSize, item.footCm,
-      item.heightCm, item.size, item.color, item.lens, ...item.unitCodes];
+      item.lengthCm,
+      item.heightCm, item.size, item.lens, ...item.unitCodes];
     return (category === 'all' || item.category === category)
       && fields.join(' ').toLocaleLowerCase('it-IT').replaceAll('.', ',')
         .includes(normalized.replaceAll('.', ','));

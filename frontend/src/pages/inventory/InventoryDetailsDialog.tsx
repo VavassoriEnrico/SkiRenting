@@ -10,10 +10,10 @@ export type InventoryDetails = {
   codes: string[];
   codesLabel: string;
   demo?: boolean;
-  units?: { code: string; description: string; action?: ReactNode }[];
+  units?: { code: string; description?: string; action?: ReactNode }[];
 };
 
-export function InventoryDetailsDialog({ details, onClose, children, busy = false }: { details: InventoryDetails; onClose: () => void; children?: ReactNode; busy?: boolean }) {
+export function InventoryDetailsDialog({ details, onClose, children, tariffSection, busy = false }: { details: InventoryDetails; onClose: () => void; children?: ReactNode; tariffSection?: ReactNode; busy?: boolean }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => { dialogRef.current?.showModal(); }, []);
@@ -37,6 +37,7 @@ export function InventoryDetailsDialog({ details, onClose, children, busy = fals
             {details.fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}
           </dl>
         </section>
+        {tariffSection}
         <section className="sale-detail-section" aria-labelledby="inventory-codes-title">
           <h3 id="inventory-codes-title">{details.codesLabel}</h3>
           <ul className="inventory-detail-codes">

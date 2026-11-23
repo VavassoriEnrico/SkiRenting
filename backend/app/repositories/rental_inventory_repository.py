@@ -4,10 +4,10 @@ from uuid import UUID
 import httpx
 
 VARIANT_SELECT = (
-    "id,brand,model,year,notes,category:material_categories(id,code,name),"
-    "ski_details(length_cm,radius_m,style),snowboard_details(length_cm,radius_m,style),"
-    "boot_details(size_label,size_system,shoe_size_eu,foot_length_cm,sole_length_mm),"
-    "helmet_details(size_label,color),pole_details(height_cm),goggle_details(lens),"
+    "id,brand,model,year,category:material_categories(id,code,name),"
+    "ski_details(length_cm),snowboard_details(length_cm),"
+    "boot_details(size_label),"
+    "helmet_details(size_label),pole_details(height_cm),goggle_details(lens),"
     "accessory_details(size_label)"
 )
 ITEM_SELECT = (

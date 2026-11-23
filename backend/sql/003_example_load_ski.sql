@@ -26,7 +26,6 @@ begin
   values (ski_category_id, 'BLIZZARD', 'ANOMALY 84 R', 2025)
   returning id into new_variant_id;
 
-  -- Il raggio non è indicato nel PDF: rimane null.
   insert into public.ski_details (variant_id, length_cm)
   values (new_variant_id, 164);
 
