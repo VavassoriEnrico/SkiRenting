@@ -20,9 +20,11 @@ function PromotionsList({ token }: { token: string }) {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [mode, setMode] = useState<'date' | 'weekly'>('date');
+  const [mode, setMode] = useState<'date' | 'weekly' | 'period'>('date');
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
+  const [startsOn, setStartsOn] = useState('');
+  const [endsOn, setEndsOn] = useState('');
   const [days, setDays] = useState<number[]>([]);
   const [percentage, setPercentage] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -49,21 +51,22 @@ function PromotionsList({ token }: { token: string }) {
     if (percentage === '' || !Number.isFinite(discount) || discount < 0 || discount > 100) {
       setError('Inserisci una percentuale compresa tra 0 e 100.'); return;
     }
-    if ((mode === 'date' && !date) || (mode === 'weekly' && !days.length)) {
-      setError('Scegli una data oppure almeno un giorno della settimana.'); return;
+    if ((mode === 'date' && !date) || (mode === 'weekly' && !days.length) || (mode === 'period' && (!startsOn || !endsOn || endsOn < startsOn))) {
+      setError('Scegli una data, i giorni della settimana oppure un periodo valido.'); return;
     }
     inFlight.current = true; setPending('create'); setError(''); setSuccess('');
     const controller = new AbortController(); operation.current = controller;
     try {
       const promotion = await apiPost<Promotion>('/promotions', token, {
         name: name.trim(),
+        ...(mode === 'period' ? {starts_on: startsOn, ends_on: endsOn} : {}),
         promotion_date: mode === 'date' ? date : null,
         weekdays: mode === 'weekly' ? [...days].sort((a,b) => a-b) : [],
         discount_percent: discount,
       }, controller.signal);
       if (!controller.signal.aborted) {
         setPromotions(current => [promotion, ...(current || [])]);
-        setName(''); setDate(''); setDays([]); setPercentage(''); setSuccess('Promozione aggiunta.');
+        setName(''); setDate(''); setStartsOn(''); setEndsOn(''); setDays([]); setPercentage(''); setSuccess('Promozione aggiunta.');
       }
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Impossibile salvare la promozione.');
@@ -90,7 +93,7 @@ function PromotionsList({ token }: { token: string }) {
   }
 
   return <div className="dashboard-page">
-    <div className="dashboard-heading"><div><div className="page-heading"><span className="heading-icon"><BadgePercent size={21} aria-hidden="true" /></span><h1>Promozioni</h1></div><p className="page-description">Promozioni condivise tra le sedi, per una data singola o per giorni ricorrenti.</p></div><Link className="sales-button" to="/management"><ArrowLeft size={16} aria-hidden="true" />Gestione</Link></div>
+    <div className="dashboard-heading"><div><div className="page-heading"><span className="heading-icon"><BadgePercent size={21} aria-hidden="true" /></span><h1>Promozioni</h1></div><p className="page-description">Promozioni condivise tra le sedi, per una data singola, per giorni ricorrenti o per un periodo.</p></div><Link className="sales-button" to="/management"><ArrowLeft size={16} aria-hidden="true" />Gestione</Link></div>
     {success && <p className="rental-inventory-notice" role="status">{success}</p>}
     <section className="rentals-panel" aria-labelledby="new-promotion-title">
       <div className="rentals-panel-heading"><h2 id="new-promotion-title">Nuova promozione</h2></div>
@@ -98,14 +101,19 @@ function PromotionsList({ token }: { token: string }) {
         <fieldset className="rental-form-section" disabled={busy || !promotions}><legend>Periodo e sconto</legend>
           <div className="rental-form-grid">
             <label>Nome promozione<input required maxLength={200} value={name} onChange={event=>setName(event.target.value)} /></label>
-            <label>Validità<select value={mode} onChange={event=>{setMode(event.target.value as 'date'|'weekly');setError('');}}><option value="date">Data singola</option><option value="weekly">Ogni settimana</option></select></label>
+            <label>Validità<select value={mode} onChange={event=>{setMode(event.target.value as 'date'|'weekly'|'period');setError('');}}><option value="date">Data singola</option><option value="weekly">Ogni settimana</option><option value="period">Periodo</option></select></label>
             {mode === 'date' && <label>Data della promozione<input type="date" required value={date} onChange={event=>setDate(event.target.value)} /></label>}
+            {mode === 'period' && <>
+              <label>Dal<input type="date" required value={startsOn} onChange={event=>setStartsOn(event.target.value)} /></label>
+              <label>Al<input type="date" required min={startsOn || undefined} value={endsOn} onChange={event=>setEndsOn(event.target.value)} /></label>
+            </>}
             <label>Sconto (%)<input type="number" required min="0" max="100" step="0.01" value={percentage} onChange={event=>setPercentage(event.target.value)} /></label>
           </div>
+          {mode === 'period' && startsOn && endsOn && endsOn < startsOn && <p className="auth-error" role="alert">La data finale non può precedere quella iniziale.</p>}
           {mode === 'weekly' && <div className="promotion-weekdays"><p className="rental-form-hint">Scegli uno o più giorni della settimana.</p><div className="category-filters" role="group" aria-label="Giorni della settimana">{promotionWeekdays.map(day=><button className={`category-filter${days.includes(day.value)?' is-selected':''}`} aria-pressed={days.includes(day.value)} type="button" key={day.value} onClick={()=>setDays(current=>current.includes(day.value)?current.filter(value=>value!==day.value):[...current,day.value])}>{day.label}</button>)}</div></div>}
         </fieldset>
         {error && <p className="auth-error" role="alert">{error}</p>}
-        <button className="sales-button sales-button-primary" type="submit" disabled={busy || !promotions || !name.trim() || percentage === '' || (mode === 'date' ? !date : !days.length)}><Plus size={16} aria-hidden="true" />{pending === 'create' ? 'Salvataggio…' : 'Aggiungi promozione'}</button>
+        <button className="sales-button sales-button-primary" type="submit" disabled={busy || !promotions || !name.trim() || percentage === '' || (mode === 'date' ? !date : mode === 'weekly' ? !days.length : !startsOn || !endsOn || endsOn < startsOn)}><Plus size={16} aria-hidden="true" />{pending === 'create' ? 'Salvataggio…' : 'Aggiungi promozione'}</button>
       </form>
     </section>
     <section className="rentals-panel promotions-list" aria-labelledby="promotions-title">
@@ -114,7 +122,7 @@ function PromotionsList({ token }: { token: string }) {
         {promotions.map(promotion=><tr key={promotion.id}><th scope="row">{promotion.name}</th><td>{promotionPeriod(promotion)}</td><td>{promotion.discount_percent.toLocaleString('it-IT')}%</td><td>{createdDate.format(new Date(promotion.created_at))}</td><td><button className="sales-button" type="button" disabled={busy} aria-label={`Rimuovi promozione ${promotion.name} · ${promotionPeriod(promotion)}`} onClick={()=>void remove(promotion)}><Trash2 size={15} aria-hidden="true" />{pending === promotion.id ? 'Rimozione…' : 'Rimuovi'}</button></td></tr>)}
         {promotions.length === 0 && <tr><td colSpan={5}><div className="rentals-empty">Nessuna promozione configurata.</div></td></tr>}
       </tbody></table></div>}
-      <p className="rentals-panel-footer">Le promozioni valgono solo per noleggi di un giorno. Si applica lo sconto più alto tra promozioni valide e albergo, senza sommarli.</p>
+      <p className="rentals-panel-footer">Le promozioni valgono solo per noleggi di un giorno. Nei periodi sono inclusi sia il primo sia l’ultimo giorno. Si applica lo sconto più alto tra promozioni valide e albergo, senza sommarli.</p>
     </section>
   </div>;
 }

@@ -163,14 +163,14 @@ def api(monkeypatch):
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=rates[offset:offset + 300])
         if request.url.path == '/rest/v1/promotions':
-            assert request.url.params['select'] == 'id,name,created_at,promotion_date,weekdays,discount_percent,is_active'
+            assert request.url.params['select'] == 'id,name,created_at,promotion_date,starts_on,ends_on,weekdays,discount_percent,is_active'
             if state.get('promotions_error'):
                 return httpx.Response(400,json={'code':state['promotions_error']})
             rows=state.setdefault('promotions',[])
             if request.method == 'POST':
                 assert request.headers['prefer'] == 'return=representation'
                 data=json.loads(request.content)
-                assert set(data) == {'name','promotion_date','weekdays','discount_percent'}
+                assert set(data) == {'name','promotion_date','starts_on','ends_on','weekdays','discount_percent'}
                 row={'id':str(UUID(int=20000+len(rows))),'created_at':'2026-11-23T10:00:00Z','is_active':True,**data}
                 rows.append(row)
                 return httpx.Response(201,json=[row])
@@ -1711,6 +1711,7 @@ def test_general_inventory_cards_aggregate_only_authorized_sites(api):
 @pytest.mark.parametrize('schedule',[
     {'promotion_date':'2026-12-25','weekdays':[]},
     {'promotion_date':None,'weekdays':[4,2]},
+    {'promotion_date':None,'weekdays':[],'starts_on':'2026-12-01','ends_on':'2026-12-31'},
 ])
 def test_promotions_create_list_and_soft_remove(api,schedule):
     client,state=api
@@ -1735,6 +1736,10 @@ def test_promotions_create_list_and_soft_remove(api,schedule):
     {'promotion_date':'invalid'}, {'weekdays':[2],'discount_percent':101},
     {'weekdays':[2],'discount_percent':-1}, {'weekdays':[2],'discount_percent':1.234},
     {'weekdays':[2],'is_active':False},
+    {'starts_on':'2026-12-02'}, {'ends_on':'2026-12-02'},
+    {'starts_on':'2026-12-02','ends_on':'2026-12-01'},
+    {'starts_on':'2026-12-01','ends_on':'2026-12-02','weekdays':[2]},
+    {'starts_on':'2026-12-01','ends_on':'2026-12-02','promotion_date':'2026-12-01'},
     {'weekdays':[2],'name':''}, {'weekdays':[2],'name':'   '}, {'weekdays':[2],'name':'a'*201},
 ])
 def test_promotions_reject_invalid_schedule_or_percentage(api,data):
@@ -1816,3 +1821,16 @@ def test_rental_history_preserves_the_applied_promotion_snapshot(api):
     assert response.json()['promotion_name']=='Promozione salvata'
     assert response.json()['promotion_id']==LOCATION_A
     assert not any(r.url.path.endswith('/promotions') for r in state['requests'])
+
+
+def test_quote_accepts_period_promotion_and_compares_it_with_date_weekly_and_hotel(api):
+    client,state=api
+    state['items']=[rental_item(0)]
+    state['rates']=[rate_row()]
+    state['promotions']=[{'id':USER_ID,'name':'Dicembre','created_at':'2026-11-23T10:00:00Z','promotion_date':None,
+                         'starts_on':'2026-12-01','ends_on':'2026-12-31','weekdays':[],'discount_percent':25,'is_active':True}]
+    request={'starts_on':'2026-12-01','ends_on':'2026-12-01','inventory_ids':[state['items'][0]['id']]}
+    response=client.post(f'/api/v1/locations/{LOCATION_A}/rental-quote',headers=HEADERS,json=request)
+    assert response.status_code==200
+    assert response.json()['total']=='15.00'
+    assert response.json()['promotion']['name']=='Dicembre'

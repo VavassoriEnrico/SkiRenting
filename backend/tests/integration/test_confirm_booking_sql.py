@@ -57,7 +57,8 @@ def confirmation_database():
                              '018_material_repairs.sql', '018_material_repairs.sql',
                              '019_material_repairs_workflow.sql', '019_material_repairs_workflow.sql',
                              '020_promotions.sql', '020_promotions.sql',
-                             '021_apply_rental_promotions.sql', '021_apply_rental_promotions.sql']:
+                             '021_apply_rental_promotions.sql', '021_apply_rental_promotions.sql',
+                             '022_promotions_period.sql', '022_promotions_period.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -646,3 +647,39 @@ def test_confirmation_rejects_stale_promotion_total_without_saving(setup):
     with pytest.raises(psycopg.errors.RaiseException,match='Listino o sconto cambiati'),conn.transaction():
         confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',expected_total='20'),booking_id)
     assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('day,expected',[
+    ('2026-11-30','20.00'),('2026-12-01','15.00'),('2026-12-15','15.00'),('2026-12-31','15.00'),('2027-01-01','20.00'),
+])
+def test_confirmation_period_promotion_includes_first_and_last_day(setup,day,expected):
+    conn,ids,*_=setup
+    conn.execute("insert into promotions(name,starts_on,ends_on,discount_percent) values('Dicembre','2026-12-01','2026-12-31',25)")
+    result=confirm(conn,payload(ids,starts_on=day,ends_on=day,expected_total=expected))
+    assert Decimal(str(result['total']))==Decimal(expected)
+    if expected=='15.00':
+        assert conn.execute('select promotion_name from rental_bookings where id=%s',(result['id'],)).fetchone()[0]=='Dicembre'
+
+
+@pytest.mark.parametrize('start,end,promotion_date,weekdays',[
+    ('2026-12-01',None,None,[]),(None,'2026-12-31',None,[]),
+    ('2026-12-31','2026-12-01',None,[]),
+    ('2026-12-01','2026-12-31','2026-12-01',[]),
+    ('2026-12-01','2026-12-31',None,[2]),
+])
+def test_promotions_sql_rejects_incomplete_or_mixed_periods(setup,start,end,promotion_date,weekdays):
+    conn,*_=setup
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute('insert into promotions(name,starts_on,ends_on,promotion_date,weekdays,discount_percent) values(%s,%s,%s,%s,%s,25)',
+                     ('Periodo',start,end,promotion_date,weekdays))
+
+
+def test_confirmation_periods_compete_with_weekly_hotel_and_ignore_multi_day(setup):
+    conn,ids,hotel,*_=setup
+    conn.execute("insert into promotions(name,starts_on,ends_on,discount_percent) values('Periodo','2026-12-01','2026-12-31',25)")
+    conn.execute("insert into promotions(name,weekdays,discount_percent) values('Martedì',array[2]::smallint[],30)")
+    result=confirm(conn,payload(ids,starts_on='2026-12-01',ends_on='2026-12-01',hotel_id=hotel,expected_total='14'))
+    assert Decimal(str(result['total']))==14
+    # A second specimen avoids overlapping inventory; hotel discount only for several days.
+    result=confirm(conn,payload([ids[1]],starts_on='2026-12-01',ends_on='2026-12-03',hotel_id=hotel,expected_total='40.80'))
+    assert Decimal(str(result['total']))==Decimal('40.80')

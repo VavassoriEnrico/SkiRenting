@@ -501,3 +501,14 @@ sconto albergo, senza cumulo. Nei noleggi di più giorni le promozioni non valgo
 ma lo sconto albergo rimane disponibile. Lo sconto scelto è salvato in discount_percent.
 La funzione resta idempotente e verifica il preventivo prima di salvare; applicando
 di nuovo la vecchia 012 è necessario rieseguire anche 021.
+
+
+## 022 — Periodi promozionali
+
+Eseguire [022_promotions_period.sql](022_promotions_period.sql) dopo 020 e 012;
+include anche l'aggiornamento della conferma previsto da 021. Aggiunge starts_on
+ed ends_on a promotions, con estremi inclusi e fine non precedente all'inizio.
+Sono alternative data singola, giorni settimanali e periodo: nessuna combinazione.
+Conserva promozioni e prenotazioni esistenti ed è ripetibile. Il periodo vale per
+qualsiasi noleggio di una sola giornata compresa nell'intervallo; non abilita sconti
+promozionali su noleggi di più giorni. Resta il massimo tra promozioni e albergo.

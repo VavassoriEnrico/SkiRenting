@@ -71,7 +71,7 @@ def get_quote(client: httpx.Client, user_id: UUID, location_id: UUID, data: Rent
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01', '42703', 'PGRST204'):
-            raise HTTPException(503, 'Verifica le query 009 (sconto alberghi), 010 (tariffe) e 020 (promozioni) in Supabase.') from error
+            raise HTTPException(503, 'Verifica le query 009 (sconto alberghi), 010 (tariffe) e 020 (promozioni) e 022 (periodi promozionali) in Supabase.') from error
         raise HTTPException(503, 'Impossibile calcolare i prezzi. Riprova.') from error
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Impossibile raggiungere Supabase per calcolare i prezzi.') from error

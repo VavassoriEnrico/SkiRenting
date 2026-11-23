@@ -86,3 +86,28 @@ it('reports a missing configuration and retries loading without demo data', asyn
   await screen.findByText('Nessuna promozione configurata.');
   await waitFor(() => expect((screen.getByLabelText('Nome promozione') as HTMLInputElement).disabled).toBe(false));
 });
+
+
+it('creates a period with inclusive dates and does not send previously selected weekdays', async () => {
+  mocks.post.mockResolvedValue({...datePromotion,name:'Natale lungo',promotion_date:null,starts_on:'2026-12-20',ends_on:'2026-12-31',weekdays:[]});
+  await open();
+  change('Nome promozione','Natale lungo');change('Validità','weekly');
+  fireEvent.click(screen.getByRole('button',{name:'Martedì'}));
+  change('Validità','period');change('Dal','2026-12-20');change('Al','2026-12-31');change('Sconto (%)','15');
+  fireEvent.click(screen.getByRole('button',{name:'Aggiungi promozione'}));
+  await screen.findByText('Dal 20 dicembre 2026 al 31 dicembre 2026');
+  expect(mocks.post).toHaveBeenCalledWith('/promotions','token',{name:'Natale lungo',starts_on:'2026-12-20',ends_on:'2026-12-31',promotion_date:null,weekdays:[],discount_percent:15},expect.any(AbortSignal));
+});
+
+it('requires a complete ordered period before saving', async () => {
+  await open();change('Nome promozione','Periodo');change('Validità','period');change('Sconto (%)','10');
+  const button=screen.getByRole('button',{name:'Aggiungi promozione'}) as HTMLButtonElement;
+  change('Dal','2026-12-20');
+  expect(button.disabled).toBe(true);
+  change('Al','2026-12-19');
+  expect(button.disabled).toBe(true);
+  expect(screen.getByRole('alert')).toHaveProperty('textContent','La data finale non può precedere quella iniziale.');
+  change('Al','2026-12-20');
+  expect(button.disabled).toBe(false);
+  expect(mocks.post).not.toHaveBeenCalled();
+});

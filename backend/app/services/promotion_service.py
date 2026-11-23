@@ -16,8 +16,10 @@ def database_error(error: httpx.HTTPError):
             code = error.response.json().get('code')
         except (ValueError, AttributeError):
             code = None
-        if code in ('PGRST205', '42P01', '42703', 'PGRST204'):
+        if code in ('PGRST205', '42P01'):
             return HTTPException(503, 'Promozioni non configurate. Esegui 020_promotions.sql in Supabase.')
+        if code in ('42703', 'PGRST204'):
+            return HTTPException(503, 'Periodi promozionali non configurati. Esegui 022_promotions_period.sql in Supabase.')
         if code == '42501':
             return HTTPException(403, 'Gestione promozioni non autorizzata. Verifica la query 020.')
         if code in ('23514', '23502', '22003'):
@@ -54,6 +56,8 @@ def best_promotion_for_day(promotions: list[dict], day: date) -> dict | None:
     candidates = [promotion for promotion in promotions if promotion['is_active']
                   and Decimal(str(promotion['discount_percent'])) > 0
                   and (str(promotion['promotion_date']) == day.isoformat()
+                       or (promotion.get('starts_on') is not None and promotion.get('ends_on') is not None
+                           and str(promotion['starts_on']) <= day.isoformat() <= str(promotion['ends_on']))
                        or (promotion['promotion_date'] is None and day.isoweekday() in promotion['weekdays']))]
     # Stesso ordinamento della conferma SQL, anche a parità di percentuale.
     return min(candidates, key=lambda promotion: (

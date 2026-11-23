@@ -92,3 +92,24 @@ def test_quote_ignores_removed_promotions_and_resolves_ties_consistently():
     result=calculate_quote(data,[ITEM],[RATE],None,[inactive,second,base])
     assert result.total == Decimal('15.00')
     assert str(result.promotion.id) == ITEM_ID
+
+
+@pytest.mark.parametrize('day,expected',[
+    ('2026-11-30','20.00'),('2026-12-01','15.00'),('2026-12-15','15.00'),('2026-12-31','15.00'),('2027-01-01','20.00'),
+])
+def test_period_promotion_has_inclusive_boundaries(day,expected):
+    data=RentalQuoteRequest(starts_on=day,ends_on=day,inventory_ids=[ITEM_ID])
+    promo={'id':ITEM_ID,'name':'Dicembre','promotion_date':None,'weekdays':[],
+           'starts_on':'2026-12-01','ends_on':'2026-12-31','discount_percent':25,'is_active':True}
+    assert calculate_quote(data,[ITEM],[RATE],None,[promo]).total == Decimal(expected)
+
+
+def test_period_promotions_do_not_apply_to_multi_day_rentals_or_accumulate():
+    promo={'id':ITEM_ID,'name':'Dicembre','promotion_date':None,'weekdays':[],
+           'starts_on':'2026-12-01','ends_on':'2026-12-31','discount_percent':25,'is_active':True}
+    weekly={**promo,'id':GROUP_ID,'name':'Martedì','starts_on':None,'ends_on':None,'weekdays':[2],'discount_percent':30}
+    day=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-01',inventory_ids=[ITEM_ID])
+    assert calculate_quote(day,[ITEM],[RATE],None,[promo,weekly]).total == Decimal('14.00')
+    multi=RentalQuoteRequest(starts_on='2026-12-01',ends_on='2026-12-03',inventory_ids=[ITEM_ID])
+    hotel={'id':GROUP_ID,'name':'Albergo','discount':15}
+    assert calculate_quote(multi,[ITEM],[RATE],hotel,[promo,weekly]).total == Decimal('40.80')

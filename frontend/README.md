@@ -363,3 +363,9 @@ attributi. La conferma del noleggio salva automaticamente eventuali modifiche ai
 contatti prima della prenotazione e si ferma se il salvataggio fallisce. I dati
 storici non validi ma non modificati non vengono inviati. Titoli violetto, separatori
 violetto da 1px e bordi violetto da 1px sono limitati alla scheda del nuovo noleggio.
+
+
+Promozioni offre anche «Periodo», con Dal/Al obbligatori e fine non precedente
+all'inizio; nell'elenco compare l'intervallo completo. Il form invia solo il tipo
+di validità scelto, escludendo valori nascosti degli altri tipi. Serve la query
+022_promotions_period.sql; le promozioni restano riservate ai noleggi di un giorno.

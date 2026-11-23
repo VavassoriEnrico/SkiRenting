@@ -54,9 +54,9 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 
 - Card Promozioni in Gestione, con elenco, inserimento e rimozione.
 - Nome, ID e data/ora di creazione, percentuale di sconto.
-- Validità alternativa: data singola oppure uno o più giorni ricorrenti della settimana.
+- Validità alternativa: data singola, uno o più giorni ricorrenti della settimana oppure periodo Dal/Al, estremi inclusi.
 - Configurazioni condivise tra le sedi; rimozione logica per preservare i record.
-- Valide esclusivamente per noleggi di una giornata: data esatta o giorno della settimana.
+- Valide esclusivamente per noleggi di una giornata: data esatta, giorno della settimana o data compresa nel periodo.
 - Si applica solo lo sconto più alto tra promozioni valide e albergo, senza cumulo.
 - Per noleggi di più giorni valgono solo gli eventuali sconti albergo.
 - Nel nuovo noleggio si possono aggiornare cellulare/email del cliente esistente,

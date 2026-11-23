@@ -5,7 +5,7 @@ import httpx
 from app.repositories.rental_inventory_repository import read_all
 from app.schemas.promotion import PromotionCreate
 
-FIELDS = 'id,name,created_at,promotion_date,weekdays,discount_percent,is_active'
+FIELDS = 'id,name,created_at,promotion_date,starts_on,ends_on,weekdays,discount_percent,is_active'
 
 
 def list_promotions(client: httpx.Client):

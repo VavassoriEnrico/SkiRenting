@@ -442,3 +442,9 @@ parziali. `rental_bookings.promotion_id` e `promotion_name` conservano la scelta
 il nome storico, mentre discount_percent resta lo sconto effettivo applicato.
 I ritentativi con lo stesso booking_id non ricalcolano un noleggio già confermato;
 rimuovere o cambiare una promozione non cambia i suoi importi storici.
+
+
+Da 022, le promozioni accettano anche starts_on/ends_on: entrambe obbligatorie
+per il periodo, ordinate ed alternative a promotion_date e weekdays. L'API legge
+e restituisce i due campi e la conferma SQL applica il periodo con estremi inclusi,
+solo per noleggi giornalieri e senza cumulo. La query 022 include la conferma 021.
