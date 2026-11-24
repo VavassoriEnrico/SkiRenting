@@ -1,6 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, Request, HTTPException
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel
+
+from app.services import customer_document_service
 
 from app.api.routers.operator import CurrentUserId, SupabaseClient
 from app.schemas.customer import CustomerCreate, CustomerListRead, CustomerRead, CustomerUpdate
@@ -35,3 +39,33 @@ def delete_customer(customer_id: UUID, user_id: CurrentUserId, client: SupabaseC
 @router.get('/{customer_id}/bookings', response_model=CustomerBookingsRead)
 def customer_bookings(customer_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
     return read_customer_bookings(client, user_id, customer_id)
+
+
+class CustomerDocumentRead(BaseModel):
+    url: str | None
+
+
+@router.get('/{customer_id}/document', response_model=CustomerDocumentRead)
+def read_document(customer_id: UUID, user_id: CurrentUserId, client: SupabaseClient, response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    return customer_document_service.read_document(client, user_id, customer_id)
+
+
+@router.put('/{customer_id}/document', response_model=CustomerDocumentRead)
+async def upload_document(customer_id: UUID, request: Request, user_id: CurrentUserId, client: SupabaseClient, response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    content_type = request.headers.get('content-type', '').split(';')[0].lower()
+    if content_type not in customer_document_service.IMAGE_EXTENSIONS:
+        raise HTTPException(422, 'Seleziona una foto JPEG, PNG o WebP.')
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > customer_document_service.MAX_DOCUMENT_BYTES:
+            raise HTTPException(413, 'La foto può occupare al massimo 5 MB.')
+        data.extend(chunk)
+    return await run_in_threadpool(customer_document_service.upload_document, client, user_id, customer_id, bytes(data), content_type)
+
+
+@router.delete('/{customer_id}/document', response_model=CustomerDocumentRead)
+def remove_document(customer_id: UUID, user_id: CurrentUserId, client: SupabaseClient, response: Response):
+    response.headers['Cache-Control'] = 'no-store'
+    return customer_document_service.delete_document(client, user_id, customer_id)

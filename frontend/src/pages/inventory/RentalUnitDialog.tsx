@@ -74,7 +74,7 @@ export function RentalUnitDialog({ item, token, source, destinations, onClose, o
             <div><dt>Noleggi dall’ultima riparazione</dt><dd>{statistics.rentals_since_last_repair}</dd></div>
             <div><dt>Ultima riparazione conclusa</dt><dd>{statistics.last_repair_at ? new Date(statistics.last_repair_at).toLocaleString('it-IT',{timeZone:'Europe/Rome'}) : 'Nessuna riparazione precedente'}</dd></div>
           </dl>
-          <p className="rental-form-hint">Conteggi sui noleggi registrati e già iniziati, esclusi quelli annullati, e sulle riparazioni concluse. Senza riparazioni precedenti, il conteggio dall’ultima riparazione coincide con il totale.</p>
+          <p className="rental-form-hint">Conteggi sui noleggi registrati e già iniziati, inclusi gli storici importati riconosciuti dal codice ed esclusi quelli annullati, e sulle riparazioni concluse. Senza riparazioni precedenti, il conteggio dall’ultima riparazione coincide con il totale.</p>
         </>}
       </section>
       {transferError && <p className="auth-error" role="alert">{transferError}</p>}

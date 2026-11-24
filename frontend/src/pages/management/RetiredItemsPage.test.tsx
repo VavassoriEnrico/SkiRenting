@@ -6,9 +6,9 @@ import { RetiredItemsPage } from './RetiredItemsPage';
 import { ManagementPage } from './ManagementPage';
 import type { RentalItem } from '../inventory/rental-inventory';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), auth: { session: { access_token: 'token' } } }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), auth: { session: { access_token: 'token' } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
-vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: vi.fn() }));
+vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post }));
 const category = { id: 'ski', code: 'ski', name: 'Sci' };
 const locations = [{ id: 'site-a', name: 'Madesimo' }, { id: 'site-b', name: 'Boscone' }];
 const item: RentalItem = { id: 'unit-a', code: 'SKI001', status: 'retired', is_rentable: false, is_bookable: false,
@@ -22,6 +22,7 @@ const inventory = { categories: [category], locations, items: [
 ] };
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute('open', ''); });
+  mocks.post.mockReset().mockResolvedValue({});
   mocks.get.mockReset().mockImplementation((path: string) => Promise.resolve(path === '/retired-rental-inventory'
     ? inventory : { item, statistics: { rental_count: 12, repair_count: 3, rentals_since_last_repair: 2, last_repair_at: '2026-01-01T10:00:00Z' } }));
 });
@@ -79,4 +80,32 @@ it('paginates individual retired units', async () => {
   expect(screen.queryByText('ITEM31')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Successivi' }));
   expect(screen.getByText('ITEM31')).toBeTruthy();
+});
+
+
+it('reactivates an item only after confirmation and removes it from the retired list', async () => {
+  render(<RetiredItemsPage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Riattiva articolo SKI001' }));
+  expect(mocks.post).not.toHaveBeenCalled();
+  const dialog = screen.getByRole('dialog', { name: 'Riattiva articolo' });
+  expect(within(dialog).getByText('Madesimo')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Conferma riattivazione' }));
+  await screen.findByText('Articolo SKI001 riattivato nel magazzino di Madesimo.');
+  expect(mocks.post).toHaveBeenCalledWith('/locations/site-a/rental-inventory/unit-a/reactivate', 'token', {}, expect.any(AbortSignal));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByText('SKI001')).toBeNull();
+  expect(screen.getByText('SKI002')).toBeTruthy();
+});
+
+it('can cancel reactivation and retains an item when the request fails', async () => {
+  render(<RetiredItemsPage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Riattiva articolo SKI001' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annulla' }));
+  expect(mocks.post).not.toHaveBeenCalled();
+  mocks.post.mockRejectedValueOnce(new Error('Modello disabilitato'));
+  fireEvent.click(screen.getByRole('button', { name: 'Riattiva articolo SKI001' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Conferma riattivazione' }));
+  await screen.findByRole('alert');
+  expect(within(screen.getByRole('table')).getByText('SKI001')).toBeTruthy();
+  expect(screen.getByRole('dialog')).toBeTruthy();
 });

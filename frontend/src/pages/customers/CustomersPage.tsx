@@ -117,7 +117,7 @@ function CustomersList({ token }: { token: string }) {
         </div>
         {customers && !error && filtered.length > 50 && <div className="rental-equipment-pagination history-pagination"><span>{currentPage * 50 + 1}–{Math.min((currentPage + 1) * 50, filtered.length)} di {filtered.length}</span><div><button className="sales-button" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Precedenti</button><button className="sales-button" type="button" disabled={(currentPage + 1) * 50 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Successivi</button></div></div>}
       </section>
-      {selectedCustomer && <CustomerBookingsDialog key={selectedCustomer.id} customer={selectedCustomer} token={token} onClose={() => setSelectedCustomer(null)} />}
+      {selectedCustomer && <CustomerBookingsDialog key={selectedCustomer.id} customer={selectedCustomer} token={token} onClose={() => setSelectedCustomer(null)} onBookingCountChange={count => setCustomers(current => current?.map(row => row.id === selectedCustomer.id ? { ...row, booking_count: count } : row) || null)} />}
       {action && <CustomerDialog key={`${action.mode}:${action.customer.id}`} {...action} token={token} onClose={() => setAction(null)} onSaved={(customer) => { setCustomers((current) => current?.map((row) => row.id === customer.id ? { ...row, ...customer } : row) || null); setAction(null); setNotice('Cliente aggiornato.'); }} onDeleted={(id) => { setCustomers((current) => current?.filter((row) => row.id !== id) || null); setAction(null); setNotice('Cliente eliminato dall’anagrafica.'); }} />}
     </div>
   );

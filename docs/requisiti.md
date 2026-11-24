@@ -157,3 +157,94 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 - Clienti ordinabili in entrambi i versi per cognome, nome, numero prenotazioni,
   età, email, telefono e note, applicando l'ordine prima della paginazione e
   mantenendo i dati mancanti in fondo.
+
+- Dalla pagina Articoli dismessi si può riattivare un esemplare con conferma,
+  mantenendo ID, codice, sede e storico. Torna attivo/noleggiabile/prenotabile;
+  riparazioni aperte e catalogo disabilitato bloccano l'operazione.
+
+## Lista operativa numerata — riferimento stabile
+
+Numerazione concordata il 24 novembre 2026: conservarla per i prossimi riferimenti
+in chat. **9 e 23 completati per conferma dell'utente. 6 e 7 implementati; applicare le nuove migrazioni 035 e 036.**
+Le altre attività rimangono in sospeso; quelle indicate come decisioni non sono
+funzionalità già approvate. Le nuove migrazioni successive alla 034 sono separate
+dalla verifica già conclusa al punto 23.
+
+1. Rivedere definitivamente la grafica del nuovo noleggio.
+2. Definire preparazione e consegna effettiva del materiale e passaggi di stato.
+3. Realizzare l'eventuale scheda/elenco di preparazione noleggi.
+4. Preparare scheda noleggio stampabile/PDF con cliente, date, materiale, codici e importi.
+5. Concordare intestazione, condizioni e spazio firma del documento.
+6. **IMPLEMENTATO (migrazione 035) — Cellulare obbligatorio nel nuovo noleggio.** Un cliente storico senza numero deve essere integrato quando torna e viene selezionato per un nuovo noleggio. Nessuna modifica massiva ai clienti che non tornano. Applicare a giornalieri e stagionali.
+7. **IMPLEMENTATO (migrazione 036) — Mantenere la foto documento.** Implementare caricamento e consultazione nel nuovo noleggio e nella scheda cliente; foto facoltativa in Storage privato.
+8. Inserire i listini definitivi giornalieri/stagionali quando disponibili.
+9. **COMPLETATO — Alberghi reali e percentuali di sconto già sistemati dall'utente.**
+10. Confermare i metodi di pagamento col proprietario.
+11. Provare la pistola reale in noleggi, carichi e rientri.
+12. Controllare focus, Invio e scansioni rapide consecutive.
+13. Uniformare minuscole/maiuscole nei campi codice.
+14. Chiarire la regola del doppio scan nei rientri.
+15. Verificare rientri parziali, ritardi e bastoncini generici di prenotazioni diverse.
+16. Controllo complessivo della coerenza tra magazzino, riparazioni, card e chiusura al rinoleggio.
+17. Caricare il materiale reale per la vendita quando disponibile.
+18. Provare i moduli di carico col proprietario e confermare le caratteristiche necessarie.
+19. Verificare la distribuzione reale del materiale fra Madesimo e Boscone.
+20. Controllare le prenotazioni storiche senza cliente associato (22 nella prova locale).
+21. Verificare i collegamenti fra materiale storico e attuale per le statistiche individuali.
+22. Controllare i dati anomali storici conservati senza correzioni automatiche.
+23. **COMPLETATO — Migrazioni e configurazione Supabase fino alla 034 verificate dall'utente.**
+24. Definire lo schema vendita con testata e righe per più prodotti.
+25. Realizzare vendita: cliente, prodotti/quantità, pagamento e conferma.
+26. Scalare quantità e registrare vendita atomicamente, verificando disponibilità.
+27. Collegare lo storico vendite ai dati reali.
+28. Collegare ricerca, filtri e popup vendite ai record effettivi.
+29. PDF della singola vendita con dati reali.
+30. Riepilogo PDF di tutte le vendite.
+31. Concordare dati e diciture del documento da consegnare al cliente.
+32. Confermare l'eventuale ricevuta via email.
+33. Realizzare i solleciti per il materiale non riconsegnato (rimandati).
+34. Scegliere WhatsApp manuale o API.
+35. Definire destinatari/testi, prevenzione doppi invii ed esiti dei solleciti.
+36. Decidere e realizzare l'email di conferma noleggio.
+37. PDF magazzino restante, per categoria e sede.
+38. Concordare ulteriori esportazioni, per esempio Excel/CSV.
+39. Scegliere le metriche definitive di dashboard e analytics.
+40. Collegare la dashboard ai dati reali.
+41. Costruire le analytics.
+42. Definire filtri, confronti ed esportazioni delle analisi.
+43. Stabilire attendibilità e limiti delle analisi storiche.
+44. Rifinire la dashboard come ultimo intervento.
+45. DA DECIDERE — Modifica di noleggi già confermati.
+46. DA DECIDERE — Proroga noleggio e ricalcolo.
+47. DA DECIDERE — Annullamento distinto dall'eliminazione dallo storico.
+48. DA DECIDERE — Correzione/storno di pagamenti registrati per errore.
+49. DA DECIDERE — Rettifiche quantità vendita dopo errori/inventario.
+50. DA DECIDERE — Resi vendita.
+51. DA DECIDERE — Permessi differenti fra operatori e responsabile.
+52. Prova completa di giornalieri/stagionali, pack, sconti, acconti, saldi e rientri.
+53. Prova di carichi, trasferimenti, riparazioni, dismissioni e riattivazioni.
+54. Prova con due computer simultanei.
+55. Prova di interruzioni di connessione e ritentativi.
+56. Verifica macOS/Windows/Linux e schermi effettivi.
+57. Pubblicazione frontend/backend e indirizzi definitivi.
+58. Configurazione/verifica recupero accesso e password.
+59. Backup e prova di ripristino.
+60. Prestazioni con storico completo e pulizia dati di prova.
+61. Aggiornare la documentazione iniziale superata.
+62. Guida operativa e prova finale col proprietario.
+
+Ulteriore richiesta dello stesso turno: dalla scheda cliente poter eliminare una
+prenotazione con la stessa conferma dello storico, mantenendo aperta la scheda e
+aggiornando il conteggio anche nella tabella clienti.
+
+Stato delle richieste aggiuntive: eliminazione prenotazioni dalla scheda cliente
+implementata con conferma, aggiornamento del conteggio e mantenimento del popup.
+Corretto anche il conteggio utilizzi del singolo esemplare: include i noleggi
+importati riconosciuti per codice, con uguaglianza case-insensitive ma simboli e
+zeri iniziali preservati. Prenotazioni distinte contate una volta; data utilizzo
+storica derivata dall'inizio originale, non dalla creazione dell'importazione.
+L'utente ha confermato che ora il conteggio sembra funzionare.
+
+Foto documento (punto 7): disponibile anche lo scatto dalla webcam del PC, con
+anteprima, possibilità di rifare e conferma di salvataggio. Nessun audio;
+caricamento file mantenuto come alternativa. Riusa Storage privato e migrazione 036.

@@ -724,3 +724,33 @@ stessi dati restituisce il risultato precedente; ID riusati con dati differenti
 sono rifiutati. Codici vuoti o ripetuti sono respinti. Un codice già presente o
 qualsiasi errore annulla l'intera operazione, incluse le nuove voci del catalogo.
 Non vengono rinominati né riutilizzati i codici già presenti nello storico.
+
+## 034 — Riattivazione articoli dismessi
+
+Eseguire [034_reactivate_rental_inventory.sql](034_reactivate_rental_inventory.sql)
+dopo 033. Aggiunge soltanto la funzione di riattivazione, senza nuove tabelle.
+Verifica operatore/sede e blocca la riga prima di ripristinare `status=active`,
+`is_rentable=true`, `is_bookable=true` e azzerare `deleted_at/deleted_by`.
+ID, codice, sede, prenotazioni e riparazioni precedenti rimangono invariati.
+Riparazioni aperte e modelli/gruppi disabilitati impediscono la riattivazione.
+Un ritentativo su un articolo già riattivato non cambia lo stato corrente,
+anche se nel frattempo è entrato in manutenzione.
+
+## 035 — Cellulare per i nuovi noleggi
+
+Eseguire [035_rental_customer_phone.sql](035_rental_customer_phone.sql). Un trigger
+sull'inserimento prenotazioni richiede un cellulare non vuoto nell'anagrafica
+cliente per giornalieri e stagionali. Clienti senza numero rimangono consultabili;
+nessun aggiornamento massivo. Importazioni legacy, prenotazioni già presenti e
+registrazione dei loro pagamenti non vengono bloccate.
+
+## 036 — Foto documento cliente
+
+Eseguire [036_customer_documents.sql](036_customer_documents.sql). Crea/configura
+il bucket **privato** `customer-documents`: JPEG, PNG, WebP, massimo 5 MiB.
+La colonna `customers.document_path` esiste già; nessuna nuova tabella clienti.
+Le policy Storage autorizzano solo operatori configurati con almeno una sede e
+file nella cartella di un cliente esistente e non eliminato. Le API Storage
+eseguono upload/cancellazioni; non si manipolano direttamente i record objects.
+Il backend usa il JWT dell'operatore, senza service_role. I link di consultazione
+sono firmati per 120 secondi e le risposte dell'API documento non sono memorizzabili.

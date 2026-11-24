@@ -12,7 +12,7 @@ const mocks=vi.hoisted(()=>({get:vi.fn(),post:vi.fn(),patch:vi.fn()}));
 vi.mock('../../auth/AuthProvider',()=>({useAuth:()=>({session:{access_token:'token'},location:{id:'site-a',name:'Madesimo'}})}));
 vi.mock('../../lib/api',()=>({apiGet:mocks.get,apiPost:mocks.post,apiPatch:mocks.patch}));
 const season={id:'season-one',name:'2026/2027',return_date:'2027-04-30',is_current:true,created_at:'2026-11-23T10:00:00Z'};
-const customer={id:'customer',first_name:'Mario',last_name:'Rossi',email:null,phone:null,notes:null};
+const customer={id:'customer',first_name:'Mario',last_name:'Rossi',email:null,phone:'+39 333001234',notes:null};
 const ski={id:'ski',code:'ski',name:'Sci'};
 const boots={id:'boots',code:'ski_boots',name:'Scarponi sci'};
 const poles={id:'poles',code:'poles',name:'Bastoncini'};

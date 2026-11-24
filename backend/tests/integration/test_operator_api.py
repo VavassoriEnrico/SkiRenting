@@ -1,4 +1,5 @@
 import json
+import re
 from uuid import UUID
 
 import httpx
@@ -34,6 +35,22 @@ def api(monkeypatch):
         assert request.headers["apikey"] == "test-publishable-key"
         if request.headers["Authorization"] != "Bearer valid-token":
             return httpx.Response(401, json={"message": "Invalid token"})
+        if request.url.path.startswith('/storage/v1/'):
+            if state.get('storage_error'):
+                return httpx.Response(400, json={'message': 'Storage unavailable'})
+            objects = state.setdefault('document_objects', {})
+            if request.url.path.startswith('/storage/v1/object/sign/customer-documents/'):
+                path = request.url.path.split('/customer-documents/', 1)[1]
+                assert json.loads(request.content) == {'expiresIn': 120}
+                return httpx.Response(200, json={'signedURL': f'/object/sign/customer-documents/{path}?token=private-test-token'})
+            if request.method == 'DELETE':
+                for path in json.loads(request.content)['prefixes']:
+                    objects.pop(path, None)
+                return httpx.Response(200, json=[])
+            path = request.url.path.split('/customer-documents/', 1)[1]
+            assert request.headers['x-upsert'] == 'false'
+            objects[path] = bytes(request.content)
+            return httpx.Response(200, json={'Key': path})
         if request.url.path == "/auth/v1/user":
             return httpx.Response(200, json={"id": USER_ID})
         if request.url.path == "/rest/v1/operator_profiles":
@@ -139,9 +156,19 @@ def api(monkeypatch):
                 rows = [r for r in rows if request.url.params['ends_on'] == f"eq.{r['ends_on']}"]
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=rows[offset:offset + 300])
+        if request.url.path == '/rest/v1/rental_booking_items' and request.url.params.get('is_legacy') == 'eq.true':
+            assert request.url.params['rental_inventory_id'] == 'is.null'
+            assert request.url.params['booking.legacy_ready'] == 'eq.true'
+            assert request.url.params['booking.deleted_at'] == 'is.null'
+            rows = [row for row in state.get('legacy_unit_rentals', [])
+                    if re.search(request.url.params['code_snapshot'][7:], row['code_snapshot'], re.IGNORECASE)
+                    and row['booking']['starts_on'] <= request.url.params['booking.starts_on'][4:]
+                    and not row['booking'].get('deleted_at') and row['booking'].get('legacy_ready', True)]
+            offset = int(request.url.params['offset'])
+            return httpx.Response(200, json=rows[offset:offset + 300])
         if request.url.path == '/rest/v1/rental_booking_items' and request.url.params.get('rental_inventory_id','').startswith('eq.'):
             assert request.method == 'GET'
-            assert request.url.params['booking.status'] == 'in.(confirmed,preparing,active,completed)'
+            assert request.url.params['booking.status'] == 'in.(confirmed,preparing,active,completed,imported)'
             assert 'returned_at' not in request.url.params
             assert 'location_id' not in request.url.params
             if state.get('item_statistics_error'):
@@ -288,6 +315,14 @@ def api(monkeypatch):
             matches[0].setdefault('deleted_at','2026-11-21T12:00:00Z')
             return httpx.Response(200, json=None)
         if request.url.path == "/rest/v1/customers":
+            if request.url.params.get('select') == 'id,document_path':
+                rows = [row for row in state.get('customers', []) if not row.get('deleted_at') and request.url.params['id'] == f"eq.{row['id']}"]
+                if request.method == 'PATCH':
+                    if state.get('document_update_error'):
+                        return httpx.Response(400, json={'code': '42501'})
+                    for row in rows:
+                        row.update(json.loads(request.content))
+                return httpx.Response(200, json=[{'id': row['id'], 'document_path': row.get('document_path')} for row in rows])
             assert request.url.params["select"] == "id,first_name,last_name,email,phone,notes,birth_date,skill_level,language,country_code,is_legacy"
             assert "location_id" not in request.url.params
             if state.get("customer_error"):
@@ -325,6 +360,14 @@ def api(monkeypatch):
             key = "groups" if request.url.path.endswith("material_groups") else "variants"
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=state.get(key, [])[offset:offset + 500])
+        if request.url.path == '/rest/v1/rpc/skirenting_reactivate_rental_item':
+            body = json.loads(request.content)
+            state['reactivate_body'] = body
+            if state.get('reactivate_error'):
+                return httpx.Response(400, json={'code': state['reactivate_error']})
+            item = next(row for row in state['items'] if row['id'] == body['p_item_id'])
+            item.update(status='active', deleted_at=None, deleted_by=None, is_rentable=True, is_bookable=True)
+            return httpx.Response(200, json={'id': item['id'], 'code': item['code'], 'location_id': body['p_location_id']})
         if request.url.path == '/rest/v1/rpc/skirenting_register_rental_arrival':
             body = json.loads(request.content)
             state['rental_arrival_body'] = body
@@ -1778,7 +1821,7 @@ def test_unit_details_reads_all_pages_and_uses_total_without_previous_repairs(ap
     response=client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}",headers=HEADERS)
     assert response.status_code == 200
     assert response.json()['statistics'] == {'rental_count':1305,'repair_count':0,'rentals_since_last_repair':1305,'last_repair_at':None}
-    requests=[r for r in state['requests'] if r.url.path.endswith('/rental_booking_items')]
+    requests=[r for r in state['requests'] if r.url.path.endswith('/rental_booking_items') and r.url.params.get('rental_inventory_id','').startswith('eq.')]
     assert [r.url.params['offset'] for r in requests] == ['0','300','600','900','1200','1305']
 
 
@@ -2342,3 +2385,111 @@ def test_retired_inventory_requires_configured_operator(api,profile,locations):
     state['profile'], state['locations'] = profile, locations
     assert client.get('/api/v1/retired-rental-inventory', headers=HEADERS).status_code == 403
     assert not any(request.url.path.endswith('rental_inventory') for request in state['requests'])
+
+
+def test_reactivate_api_returns_item_to_inventory_and_checks_site(api):
+    client, state = api
+    item = {**rental_item(0), 'status': 'retired', 'deleted_at': '2026-11-24T10:00:00Z', 'location': {'id': LOCATION_A, 'name': 'Madesimo'}}
+    state['items'] = [item]
+    path = f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}/reactivate"
+    assert client.post(path).status_code == 401
+    assert client.post(f"/api/v1/locations/{UNASSIGNED_LOCATION}/rental-inventory/{item['id']}/reactivate", headers=HEADERS).status_code == 403
+    assert 'reactivate_body' not in state
+    response = client.post(path, headers=HEADERS)
+    assert response.status_code == 200 and response.json()['code'] == item['code']
+    assert client.get('/api/v1/retired-rental-inventory', headers=HEADERS).json()['items'] == []
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory', headers=HEADERS).json()['items'][0]['id'] == item['id']
+
+
+@pytest.mark.parametrize('code,status', [('P0002',404), ('42501',403), ('55000',409), ('PGRST202',503)])
+def test_reactivate_api_reports_failures_without_restoring_row(api,code,status):
+    client, state = api
+    state['reactivate_error'] = code
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/rental-inventory/{USER_ID}/reactivate', headers=HEADERS)
+    assert response.status_code == status
+
+
+def test_customer_document_upload_private_link_replace_and_remove(api):
+    client, state = api
+    state['customers'] = [{'id': USER_ID, 'first_name': 'Mario', 'last_name': 'Rossi'}]
+    path = f'/api/v1/customers/{USER_ID}/document'
+    assert client.get(path, headers=HEADERS).json() == {'url': None}
+    response = client.put(path, headers={**HEADERS, 'Content-Type': 'image/png'}, content=b'\x89PNG\r\n\x1a\nphoto')
+    assert response.status_code == 200 and 'token=' in response.json()['url']
+    assert response.headers['cache-control'] == 'no-store'
+    original = state['customers'][0]['document_path']
+    assert original.startswith(USER_ID + '/') and original.endswith('.png')
+    assert original in state['document_objects']
+    response = client.put(path, headers={**HEADERS, 'Content-Type': 'image/jpeg'}, content=b'\xff\xd8\xffphoto2')
+    assert response.status_code == 200
+    assert original not in state['document_objects'] and len(state['document_objects']) == 1
+    assert client.get(path, headers=HEADERS).json()['url']
+    assert client.delete(path, headers=HEADERS).json() == {'url': None}
+    assert state['customers'][0]['document_path'] is None and not state['document_objects']
+
+
+@pytest.mark.parametrize('mime,content,status', [
+    ('text/html', b'<script>', 422), ('image/png', b'not a photo', 422),
+    ('image/png', b'x' * (5 * 1024 * 1024 + 1), 413),
+])
+def test_customer_document_rejects_invalid_file_before_storage(api,mime,content,status):
+    client, state = api
+    state['customers'] = [{'id': USER_ID}]
+    response = client.put(f'/api/v1/customers/{USER_ID}/document', headers={**HEADERS, 'Content-Type': mime}, content=content)
+    assert response.status_code == status and not state.get('document_objects')
+
+
+def test_customer_document_requires_auth_customer_and_configured_operator(api):
+    client, state = api
+    path = f'/api/v1/customers/{USER_ID}/document'
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=HEADERS).status_code == 404
+    state['profile'] = None
+    assert client.get(path, headers=HEADERS).status_code == 403
+    assert not state.get('document_objects')
+
+
+def test_customer_document_keeps_previous_photo_when_pointer_update_fails(api):
+    client, state = api
+    previous = f'{USER_ID}/00000000-0000-0000-0000-000000000001.jpg'
+    state['customers'] = [{'id': USER_ID, 'document_path': previous}]
+    state['document_objects'] = {previous: b'old'}
+    state['document_update_error'] = True
+    response = client.put(f'/api/v1/customers/{USER_ID}/document', headers={**HEADERS, 'Content-Type': 'image/jpeg'}, content=b'\xff\xd8\xffnew')
+    assert response.status_code == 503
+    assert state['customers'][0]['document_path'] == previous
+    assert state['document_objects'] == {previous: b'old'}
+
+
+def test_unit_usage_counts_imported_bookings_by_code_without_import_creation_date(api):
+    client, state = api
+    item = rental_item(0)
+    state['items'] = [item]
+    state['legacy_unit_rentals'] = [
+        {'id': f'old-line-{index}', 'booking_id': f'old-booking-{index}', 'code_snapshot': item['code'],
+         'is_legacy': True, 'delivered_at': None,
+         'booking': {'status': 'imported', 'is_legacy': True, 'starts_on': day, 'created_at': '2099-01-01T10:00:00Z'}}
+        for index, day in enumerate(['2000-01-01', '2000-03-01'])
+    ]
+    state['legacy_unit_rentals'].append({**state['legacy_unit_rentals'][0], 'id': 'duplicate-original-row'})
+    state['legacy_unit_rentals'].append({**state['legacy_unit_rentals'][0], 'id': 'wrong-code', 'code_snapshot': 'OTHER'})
+    state['repairs'] = [{'id': 'repair', 'rental_inventory_id': item['id'], 'status': 'completed', 'completed_at': '2000-02-01T10:00:00Z'}]
+    response = client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['statistics']['rental_count'] == 2
+    assert response.json()['statistics']['rentals_since_last_repair'] == 1
+
+
+@pytest.mark.parametrize('code', ['ScI001', '+00A.*%_', 'A,B(02)'])
+def test_imported_usage_joins_codes_case_insensitively_with_literal_symbols(api,code):
+    client, state = api
+    item = {**rental_item(0), 'code': code}
+    state['items'] = [item]
+    state['legacy_unit_rentals'] = [
+        {'id': f'line-{index}', 'booking_id': f'booking-{index}', 'code_snapshot': historical,
+         'is_legacy': True, 'delivered_at': None,
+         'booking': {'status': 'imported', 'is_legacy': True, 'starts_on': '2000-01-01', 'created_at': '2099-01-01T00:00:00Z'}}
+        for index, historical in enumerate([code.lower(), code.upper(), 'prefix' + code, code + 'suffix', code + '0'])
+    ]
+    response = client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{item['id']}", headers=HEADERS)
+    assert response.status_code == 200 and response.json()['statistics']['rental_count'] == 2

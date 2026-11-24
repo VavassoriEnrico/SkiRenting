@@ -6,7 +6,7 @@ import { OperationsPage } from './OperationsPage';
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' } }) }));
 vi.mock('../../lib/api', () => ({ apiGet: mocks.get, apiPost: mocks.post, apiPatch: mocks.patch }));
-const customer = { id: 'customer', first_name: 'Mario', last_name: 'Rossi', email: null, phone: null, notes: null };
+const customer = { id: 'customer', first_name: 'Mario', last_name: 'Rossi', email: null, phone: '+39 333001234', notes: null };
 const item = {
   id: 'item-one', code: '+001', status: 'active', is_rentable: true, is_bookable: true,
   group: { id: 'race', name: 'RACE' }, variant: {

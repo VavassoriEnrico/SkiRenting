@@ -37,6 +37,8 @@ def confirm_booking(client: httpx.Client, user_id: UUID, location_id: UUID, data
             raise HTTPException(409, body.get('message', 'Disponibilità o prezzi cambiati. Aggiorna il noleggio.')) from error
         if code == '42501':
             raise HTTPException(403, 'Non sei autorizzato a confermare noleggi in questa sede.') from error
+        if code == '22023' and 'cellulare' in str(body.get('message', '')).lower():
+            raise HTTPException(422, body['message']) from error
         if code in ('22023', '22P02', '22003', '23514', '23503'):
             raise HTTPException(422, 'Controlla cliente, date, materiale e pagamento.') from error
         raise HTTPException(503, 'Conferma non riuscita. Riprova con lo stesso modulo per evitare duplicati.') from error
@@ -72,6 +74,8 @@ def register_payment(client: httpx.Client, user_id: UUID, location_id: UUID, boo
             raise HTTPException(403, 'Non sei autorizzato a registrare pagamenti in questa sede.') from error
         if code in ('P0001', 'P0002'):
             raise HTTPException(409, body.get('message', 'Saldo aggiornato da un altro operatore. Aggiorna i rientri.')) from error
+        if code == '22023' and 'cellulare' in str(body.get('message', '')).lower():
+            raise HTTPException(422, body['message']) from error
         if code in ('22023', '22P02', '22003', '23514'):
             raise HTTPException(422, 'Controlla importo, metodo e data del pagamento.') from error
         raise HTTPException(503, 'Registrazione non riuscita. Riprova dallo stesso modulo per evitare duplicati.') from error

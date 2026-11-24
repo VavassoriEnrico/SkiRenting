@@ -517,3 +517,43 @@ significa dai più giovani ai più anziani, usando la data di nascita completa.
 Valori mancanti restano in fondo in entrambi i versi. L'ordinamento opera su tutti
 i risultati della ricerca prima della paginazione; cambiare criterio o verso
 riporta alla prima pagina senza ricaricare i dati.
+
+## Riattiva dagli articoli dismessi
+
+Ogni riga di Gestione → Articoli dismessi ha **Riattiva**. La conferma riporta
+codice, modello e sede e spiega che l'esemplare tornerà attivo, noleggiabile e
+prenotabile. La riga scompare dall'elenco soltanto dopo il successo; in caso di
+errore rimangono articolo e conferma. Il materiale torna al magazzino della sua
+sede con lo stesso codice e storico. Richiede **034_reactivate_rental_inventory.sql**.
+
+## Clienti nel nuovo noleggio, documenti e cancellazione prenotazioni
+
+Il cellulare è obbligatorio nei nuovi giornalieri e stagionali; selezionando un
+cliente storico privo di numero si deve integrare il recapito per confermare.
+L'anagrafica di clienti che non tornano rimane invariata. Il blocco è applicato
+anche dal database con la migrazione 035, senza rendere obbligatorio il numero
+sull'intera tabella clienti.
+
+**Foto documento** nel nuovo noleggio e nella scheda cliente apre su richiesta
+il pannello di consultazione/caricamento. Occorre salvare prima il cliente nuovo;
+foto facoltativa, JPEG/PNG/WebP massimo 5 MiB, sostituzione e rimozione disponibili.
+I link sono temporanei e il bucket è privato (036). Un errore non viene mostrato
+come assenza di documento e la sostituzione fallita mantiene l'anteprima precedente.
+
+La tabella prenotazioni della scheda cliente ha il cestino per riga: stessa
+conferma dello storico, sede della singola prenotazione, aggiornamento dei
+conteggi nel popup e nella tabella clienti senza chiudere la scheda.
+
+## Foto documento dalla webcam del PC
+
+Nel pannello **Foto documento**, **Scatta foto** apre la webcam senza microfono.
+L'operatore inquadra il documento, scatta, controlla l'anteprima e sceglie **Rifai
+foto** oppure **Salva foto scattata**. La cattura genera un JPEG, mantenendo le
+proporzioni e limitando il lato maggiore a 2048 pixel, caricato tramite lo stesso
+endpoint privato già previsto dalla 036. La foto precedente resta finché il
+salvataggio non riesce. Nessuna nuova migrazione.
+
+Il browser deve consentire la fotocamera; l'app va aperta tramite HTTPS o localhost.
+Permesso negato, webcam mancante/occupata e browser non compatibile hanno messaggi
+dedicati. I flussi video vengono chiusi dopo lo scatto, alla chiusura del pannello
+e allo smontaggio; anche una richiesta di permesso risolta in ritardo viene chiusa.

@@ -34,6 +34,14 @@ def confirmation_database():
                     select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid
                   $$;
                   grant usage on schema auth to authenticated, anon;
+                  create schema storage;
+                  create table storage.buckets(id text primary key,name text,public boolean default false,file_size_limit bigint,allowed_mime_types text[]);
+                  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text);
+                  alter table storage.objects enable row level security;
+                  grant usage on schema storage to authenticated,anon;
+                  grant select,insert,update,delete on storage.objects to authenticated;
+                  grant select on storage.buckets to authenticated;
+
                   create table operator_profiles(id uuid primary key references auth.users(id),
                     created_at timestamptz default now(),name text);
                   create table locations(id uuid primary key,name text);
@@ -69,9 +77,12 @@ def confirmation_database():
                              '030_import_legacy_rentals.sql', '030_import_legacy_rentals.sql',
                              '031_sale_stock_arrivals.sql', '031_sale_stock_arrivals.sql',
                              '032_archive_rental_inventory.sql', '032_archive_rental_inventory.sql',
-                             '033_rental_stock_arrivals.sql', '033_rental_stock_arrivals.sql']:
+                             '033_rental_stock_arrivals.sql', '033_rental_stock_arrivals.sql',
+                             '034_reactivate_rental_inventory.sql', '034_reactivate_rental_inventory.sql',
+                             '035_rental_customer_phone.sql', '035_rental_customer_phone.sql',
+                             '036_customer_documents.sql', '036_customer_documents.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
-                conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
+                conn.execute("insert into customers(id,first_name,last_name,phone) values(%s,'Mario','Rossi','+39 333001234')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
                 category = str(conn.execute("select id from material_categories where code='ski'").fetchone()[0])
                 conn.execute('''update rental_rates set daily_price_1_day=20,daily_price_2_days=18,
@@ -1398,3 +1409,105 @@ def test_rental_arrival_checks_membership_and_changed_retry(setup):
     with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
         rental_arrival(conn, shared, units, site=SITE_B)
     assert conn.execute('select count(*) from rental_stock_arrivals where location_id=%s', (SITE_B,)).fetchone()[0] == 0
+
+
+def reactivate_rental_item(conn, item_id, site=SITE_A):
+    return conn.execute('select skirenting_reactivate_rental_item(%s,%s)', (site, item_id)).fetchone()[0]
+
+
+def test_reactivate_item_preserves_identity_repairs_and_allows_rental(setup):
+    conn, ids, *_ = setup
+    repair = send_for_repair(conn)
+    finish_repair(conn, repair['id'], ids[0])
+    archive_rental_items(conn, [ids[0]])
+    first = reactivate_rental_item(conn, ids[0])
+    assert first == {'id': ids[0], 'code': '+001', 'location_id': SITE_A}
+    assert reactivate_rental_item(conn, ids[0]) == first
+    assert conn.execute('select status,is_rentable,is_bookable,deleted_at,deleted_by from rental_inventory where id=%s', (ids[0],)).fetchone() == ('active', True, True, None, None)
+    assert conn.execute('select status from material_repairs where id=%s', (repair['id'],)).fetchone()[0] == 'completed'
+    confirm(conn, payload(ids))
+    assert conn.execute('select count(*) from rental_booking_items where rental_inventory_id=%s', (ids[0],)).fetchone()[0] == 1
+
+
+def test_reactivate_original_retired_item_without_archive_date(setup):
+    conn, ids, *_ = setup
+    conn.execute('reset role')
+    conn.execute("update rental_inventory set status='retired',is_rentable=false,is_bookable=false where id=%s", (ids[0],))
+    conn.execute('set local role authenticated')
+    reactivate_rental_item(conn, ids[0])
+    assert conn.execute('select status from rental_inventory where id=%s', (ids[0],)).fetchone()[0] == 'active'
+
+
+def test_reactivate_checks_site_and_disabled_catalog(setup):
+    conn, ids, *_ = setup
+    archive_rental_items(conn, [ids[0]])
+    with pytest.raises(psycopg.errors.NoDataFound), conn.transaction():
+        reactivate_rental_item(conn, ids[0], SITE_B)
+    conn.execute('reset role')
+    conn.execute('update material_groups set is_active=false where id=(select group_id from rental_inventory where id=%s)', (ids[0],))
+    conn.execute('set local role authenticated')
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState), conn.transaction():
+        reactivate_rental_item(conn, ids[0])
+    assert conn.execute('select deleted_at is not null from rental_inventory where id=%s', (ids[0],)).fetchone()[0]
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        reactivate_rental_item(conn, ids[0], SITE_B)
+
+
+def test_reactivate_blocks_open_repair_and_retry_does_not_close_new_repair(setup):
+    conn, ids, *_ = setup
+    archive_rental_items(conn, [ids[0]])
+    reactivate_rental_item(conn, ids[0])
+    repair = send_for_repair(conn)
+    reactivate_rental_item(conn, ids[0])
+    assert conn.execute('select status from rental_inventory where id=%s', (ids[0],)).fetchone()[0] == 'maintenance'
+    conn.execute('reset role')
+    conn.execute("update rental_inventory set status='retired' where id=%s", (ids[0],))
+    conn.execute('set local role authenticated')
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState), conn.transaction():
+        reactivate_rental_item(conn, ids[0])
+    assert conn.execute('select status from material_repairs where id=%s', (repair['id'],)).fetchone()[0] == 'in_progress'
+
+
+@pytest.mark.parametrize('kind', ['daily', 'seasonal'])
+def test_new_booking_requires_phone_but_customer_can_remain_without_phone(setup,kind):
+    conn, ids, *_ = setup
+    conn.execute('reset role')
+    conn.execute('update customers set phone=null where id=%s', (USER_A,))
+    conn.execute('set local role authenticated')
+    assert conn.execute('select phone from customers where id=%s', (USER_A,)).fetchone()[0] is None
+    if kind == 'seasonal':
+        season, data = seasonal_setup(conn, ids)
+        request = {**data, 'customer_id': USER_A, 'expected_return_date': season['return_date'], 'expected_total': '150', 'payment': None}
+        def create():
+            return conn.execute('select skirenting_confirm_seasonal_rental(%s,%s,%s)', (SITE_A, str(uuid4()), Jsonb(request))).fetchone()[0]
+    else:
+        def create():
+            return confirm(conn, payload(ids))
+    with pytest.raises(psycopg.errors.InvalidParameterValue, match='cellulare'), conn.transaction():
+        create()
+    conn.execute('update customers set phone=%s where id=%s', ('+39 333123456', USER_A))
+    assert create()
+
+
+def test_customer_document_bucket_is_private_and_paths_require_operator_and_existing_customer(setup):
+    conn, *_ = setup
+    assert conn.execute('select public,file_size_limit from storage.buckets where id=%s', ('customer-documents',)).fetchone() == (False, 5242880)
+    key = f'{USER_A}/00000000-0000-0000-0000-000000000001.jpg'
+    conn.execute('insert into storage.objects(bucket_id,name) values(%s,%s)', ('customer-documents', key))
+    assert conn.execute('select name from storage.objects').fetchone()[0] == key
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        conn.execute('insert into storage.objects(bucket_id,name) values(%s,%s)', ('customer-documents', f'{uuid4()}/photo.jpg'))
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (str(uuid4()),))
+    assert conn.execute('select count(*) from storage.objects').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('code', ['ScI001', '+00A.*%_', 'A,B(02)', 'A\\B'])
+def test_historical_code_equality_is_literal_and_case_insensitive_in_postgres(setup,code):
+    from app.services.rental_item_details_service import historical_code_filter
+    conn, *_ = setup
+    pattern = historical_code_filter(code).removeprefix('imatch.')
+    assert conn.execute('select %s ~* %s', (code.lower(), pattern)).fetchone()[0]
+    assert conn.execute('select %s ~* %s', (code.upper(), pattern)).fetchone()[0]
+    assert not conn.execute('select %s ~* %s', ('prefix' + code, pattern)).fetchone()[0]
+    assert not conn.execute('select %s ~* %s', (code + 'suffix', pattern)).fetchone()[0]

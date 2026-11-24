@@ -134,6 +134,7 @@ describe('Cliente del nuovo noleggio', () => {
     change('Cognome *', 'Rossi');
     fireEvent.click(screen.getByRole('button', { name: 'Registra un nuovo cliente' }));
     change('Nome *', 'Paolo');
+    change('Cellulare', '+39 333001234');
     fireEvent.click(screen.getByRole('button', { name: 'Salva nuovo cliente' }));
     const signal = mocks.post.mock.calls[0][3] as AbortSignal;
     view.unmount();
@@ -236,4 +237,19 @@ it('opens the unified rental form as daily and switches to the seasonal form',as
   fireEvent.click(screen.getByRole('button',{name:'Giornaliero'}));
   expect(screen.getByLabelText('Rientro previsto *')).toBeTruthy();
   expect(screen.queryByLabelText('Consegna stagionale')).toBeNull();
+});
+
+it('requires the phone only when an old customer returns and lets the operator save it', async () => {
+  await open(); change('Cognome *', 'Bianchi');
+  expect(mocks.patch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: /Bianchi Carlo/ }));
+  expect((screen.getByLabelText('Cellulare') as HTMLInputElement).required).toBe(true);
+  expect((screen.getByLabelText('Cellulare') as HTMLInputElement).readOnly).toBe(false);
+  expect(screen.getByText(/Inserisci il cellulare del cliente/)).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Conferma noleggio' }) as HTMLButtonElement).disabled).toBe(true);
+  change('Cellulare', '+39 333009876');
+  mocks.patch.mockResolvedValue({ ...customers[2], phone: '+39 333009876' });
+  fireEvent.click(screen.getByRole('button', { name: 'Salva recapiti' }));
+  await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith('/customers/three', 'token', { phone: '+39 333009876' }, expect.any(AbortSignal)));
+  expect(mocks.patch).toHaveBeenCalledTimes(1);
 });

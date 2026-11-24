@@ -6,13 +6,13 @@ export type OperatorSession = {
 
 const apiUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8001/api/v1').replace(/\/$/, '');
 
-async function apiRequest<T>(path: string, token: string, signal?: AbortSignal, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
+async function apiRequest<T>(path: string, token: string, signal?: AbortSignal, body?: unknown, method = body === undefined ? 'GET' : 'POST', file?: File): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${apiUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: { Authorization: `Bearer ${token}`, ...(file ? { 'Content-Type': file.type || 'application/octet-stream' } : body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: file || (body === undefined ? undefined : JSON.stringify(body)),
       signal,
     });
   } catch (error) {
@@ -41,4 +41,8 @@ export function apiDelete(path: string, token: string, signal?: AbortSignal): Pr
 
 export function apiPatch<T>(path: string, token: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return apiRequest<T>(path, token, signal, body, 'PATCH');
+}
+
+export function apiUpload<T>(path: string, token: string, file: File, signal?: AbortSignal): Promise<T> {
+  return apiRequest<T>(path, token, signal, undefined, 'PUT', file);
 }

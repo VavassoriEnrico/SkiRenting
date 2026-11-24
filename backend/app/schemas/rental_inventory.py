@@ -225,3 +225,9 @@ class RetiredRentalInventoryRead(BaseModel):
     categories: list[CategoryRead]
     locations: list[LocationRead]
     items: list[RetiredRentalItemRead]
+
+
+class RentalItemReactivated(BaseModel):
+    id: UUID
+    code: str
+    location_id: UUID

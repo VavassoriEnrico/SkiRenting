@@ -195,3 +195,26 @@ def get_retired_inventory(client: httpx.Client, user_id: UUID):
         }
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Impossibile caricare gli articoli dismessi. Verifica che la migrazione 032 sia stata eseguita.') from error
+
+
+def reactivate_item(client: httpx.Client, user_id: UUID, location_id: UUID, item_id: UUID):
+    get_authorized_location(client, user_id, location_id)
+    try:
+        return rental_inventory_repository.reactivate_item(client, location_id, item_id)
+    except httpx.HTTPStatusError as error:
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code') if isinstance(body, dict) else None
+        messages = {
+            'P0002': (404, 'Articolo non trovato nella sede selezionata.'),
+            '42501': (403, 'Non sei autorizzato a riattivare articoli di questa sede.'),
+            '55000': (409, 'Impossibile riattivare: verifica eventuali riparazioni aperte e che modello e gruppo siano abilitati.'),
+            '22023': (422, 'Il materiale generico condiviso non può essere riattivato da qui.'),
+            'PGRST202': (503, 'Eseguire 034_reactivate_rental_inventory.sql in Supabase.'),
+        }
+        status, message = messages.get(code, (503, 'Riattivazione non riuscita. Verifica il magazzino prima di riprovare.'))
+        raise HTTPException(status, message) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Connessione interrotta. Puoi ritentare la riattivazione.') from error

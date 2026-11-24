@@ -142,3 +142,11 @@ def list_retired_items(client: httpx.Client, location_ids: list[str]) -> list[di
             'order': 'id',
         }))
     return items
+
+
+def reactivate_item(client: httpx.Client, location_id: UUID, item_id: UUID) -> dict:
+    response = client.post('/rest/v1/rpc/skirenting_reactivate_rental_item', json={
+        'p_location_id': str(location_id), 'p_item_id': str(item_id),
+    })
+    response.raise_for_status()
+    return response.json()

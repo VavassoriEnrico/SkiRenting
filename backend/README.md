@@ -579,3 +579,31 @@ tabelle né migrazioni oltre alla 032 già richiesta per archiviare gli esemplar
 e gli stessi conteggi storici noleggi/riparazioni del materiale operativo. La sede
 viene verificata anche qui e gli articoli operativi non vengono esposti da questa
 rotta. I magazzini ordinari e la disponibilità escludono il materiale dismesso.
+
+## Riattivazione esemplari (034)
+
+`POST /api/v1/locations/{id}/rental-inventory/{item_id}/reactivate` usa la funzione
+atomica `skirenting_reactivate_rental_item` e restituisce ID, codice e sede. Richiede
+la migrazione 034. Mantiene identità e storico, verifica la sede e gestisce i
+ritentativi senza modificare nuovamente articoli già riattivati. Materiale con
+riparazioni aperte o catalogo disabilitato restituisce un conflitto.
+
+## Cellulare e documenti cliente
+
+La migrazione 035 rende obbligatorio il cellulare solo al nuovo noleggio, inclusi
+stagionali; nessuna modifica ai clienti storici inattivi. Il frontend consente di
+integrare il recapito e lo salva tramite il PATCH anagrafica già esistente.
+
+Con la 036, `GET/PUT/DELETE /api/v1/customers/{id}/document` consente consultazione,
+caricamento e rimozione foto. Il PUT riceve bytes immagine, non JSON/multipart,
+con Content-Type JPEG/PNG/WebP e limite 5 MiB verificato durante la lettura dello
+stream. Anche la firma del file viene verificata. Storage è privato e protetto
+dal JWT operatore; il GET restituisce un link valido 120 secondi oppure `url:null`.
+La sostituzione aggiorna il riferimento e ripulisce il precedente oggetto tramite
+Storage API; un fallimento del puntatore mantiene il precedente documento.
+
+Le statistiche del singolo esemplare includono gli import storici senza FK tramite
+uguaglianza case-insensitive del codice. Il filtro PostgREST `imatch` usa una regex
+ancorata con caratteri letterali: zeri e simboli conservano il loro significato.
+Non si alterano le assegnazioni storiche e si deduplicano le prenotazioni. Le date
+dello storico provengono dall'inizio del noleggio, non dalla data di importazione.

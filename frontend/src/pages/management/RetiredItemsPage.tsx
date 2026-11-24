@@ -1,8 +1,9 @@
-import { Archive, Eye, Search, X } from 'lucide-react';
+import { Archive, Eye, RotateCcw, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { apiGet, type Location } from '../../lib/api';
+import { ReactivateItemDialog } from './ReactivateItemDialog';
 import { RentalUnitDialog } from '../inventory/RentalUnitDialog';
 import { sizeLabel, sortRentalCategories, type RentalCategory, type RentalItem } from '../inventory/rental-inventory';
 
@@ -25,6 +26,8 @@ function RetiredItems({ token }: { token: string }) {
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<RetiredItem | null>(null);
+  const [reactivating, setReactivating] = useState<RetiredItem | null>(null);
+  const [notice, setNotice] = useState('');
   useEffect(() => {
     const controller = new AbortController(); setData(null); setError('');
     apiGet<RetiredInventory>('/retired-rental-inventory', token, controller.signal)
@@ -41,18 +44,25 @@ function RetiredItems({ token }: { token: string }) {
   function reset() { setQuery(''); setLocation(''); setCategory(''); setPage(0); }
   return <div className="dashboard-page inventory-page">
     <div className="dashboard-heading"><div><div className="page-heading"><span className="heading-icon"><Archive size={21} aria-hidden="true" /></span><h1>Articoli dismessi</h1></div><p className="page-description">Il materiale da noleggio dismesso delle sedi autorizzate. Apri un esemplare per consultarne caratteristiche, noleggi e riparazioni.</p></div></div>
+    {notice && <p className="customer-action-notice" role="status">{notice}</p>}
     <section className="rentals-panel" aria-labelledby="retired-items-title"><div className="rentals-panel-heading"><h2 id="retired-items-title">Elenco articoli dismessi</h2>{data && <span className="rentals-count" role="status">{filtered.length} di {data.items.length} esemplari</span>}</div>
       <div className="rentals-filters"><div className="rental-search"><Search size={17} aria-hidden="true" /><label className="sr-only" htmlFor="retired-items-search">Cerca codice, marca, modello o misura</label><input id="retired-items-search" type="search" placeholder="Codice, marca, modello, misura…" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} /></div>
         <label className="period-select"><span className="sr-only">Sede</span><select value={location} onChange={event => { setLocation(event.target.value); setPage(0); }}><option value="">Tutte le sedi</option>{data?.locations.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
         <label className="period-select"><span className="sr-only">Tipo di materiale</span><select value={category} onChange={event => { setCategory(event.target.value); setPage(0); }}><option value="">Tutti i tipi</option>{sortRentalCategories(data?.categories || []).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
         {(query || location || category) && <button type="button" className="reset-filters" onClick={reset}><X size={14} aria-hidden="true" />Azzera filtri</button>}
       </div>
-      <div className="rentals-table-scroll" role="region" aria-label="Elenco articoli dismessi" tabIndex={0}><table className="rentals-table"><caption className="sr-only">Singoli esemplari dismessi, con sede e data di dismissione</caption><thead><tr><th scope="col">Codice</th><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Tipo</th><th scope="col">Misura / taglia</th><th scope="col">Sede</th><th scope="col">Data dismissione</th><th scope="col">Scheda</th></tr></thead><tbody>
-        {error ? <tr><td colSpan={8}><div className="rentals-empty"><p className="auth-error" role="alert">{error}</p><button type="button" className="sales-button" onClick={() => setAttempt(value => value + 1)}>Riprova</button></div></td></tr> : !data ? <tr><td colSpan={8}><div className="rentals-empty" role="status">Caricamento articoli dismessi…</div></td></tr> : visible.map(item => <tr key={item.id} className="inventory-clickable-row" onClick={event => { if (!(event.target as HTMLElement).closest('button')) setSelected(item); }}><th scope="row" className="unit-code">{item.code}</th><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{item.variant.category.name}</td><td>{sizeLabel(item.variant)}</td><td>{item.location.name}</td><td>{retirementDate(item.deleted_at)}</td><td><button type="button" className="icon-button" aria-label={`Vedi articolo dismesso ${item.code}`} aria-haspopup="dialog" onClick={() => setSelected(item)}><Eye size={17} aria-hidden="true" /></button></td></tr>)}
+      <div className="rentals-table-scroll" role="region" aria-label="Elenco articoli dismessi" tabIndex={0}><table className="rentals-table"><caption className="sr-only">Singoli esemplari dismessi, con sede e data di dismissione</caption><thead><tr><th scope="col">Codice</th><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Tipo</th><th scope="col">Misura / taglia</th><th scope="col">Sede</th><th scope="col">Data dismissione</th><th scope="col">Azioni</th></tr></thead><tbody>
+        {error ? <tr><td colSpan={8}><div className="rentals-empty"><p className="auth-error" role="alert">{error}</p><button type="button" className="sales-button" onClick={() => setAttempt(value => value + 1)}>Riprova</button></div></td></tr> : !data ? <tr><td colSpan={8}><div className="rentals-empty" role="status">Caricamento articoli dismessi…</div></td></tr> : visible.map(item => <tr key={item.id} className="inventory-clickable-row" onClick={event => { if (!(event.target as HTMLElement).closest('button')) setSelected(item); }}><th scope="row" className="unit-code">{item.code}</th><td>{item.variant.brand}</td><td>{item.variant.model}</td><td>{item.variant.category.name}</td><td>{sizeLabel(item.variant)}</td><td>{item.location.name}</td><td>{retirementDate(item.deleted_at)}</td><td><div className="sales-row-actions"><button type="button" className="icon-button" aria-label={`Vedi articolo dismesso ${item.code}`} aria-haspopup="dialog" onClick={() => setSelected(item)}><Eye size={17} aria-hidden="true" /></button><button type="button" className="sales-button" aria-label={`Riattiva articolo ${item.code}`} onClick={() => { setNotice(''); setReactivating(item); }}><RotateCcw size={14} aria-hidden="true" />Riattiva</button></div></td></tr>)}
         {!error && data && !visible.length && <tr><td colSpan={8}><div className="rentals-empty"><h3>{data.items.length ? 'Nessun articolo corrisponde ai filtri' : 'Nessun articolo dismesso'}</h3><p>{data.items.length ? 'Prova un altro filtro.' : 'Qui compariranno gli esemplari dismessi dal magazzino noleggio.'}</p></div></td></tr>}
       </tbody></table></div>
       {filtered.length > 30 && <div className="rental-equipment-pagination"><span>{currentPage * 30 + 1}–{Math.min((currentPage + 1) * 30, filtered.length)} di {filtered.length}</span><div><button type="button" className="sales-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Precedenti</button><button type="button" className="sales-button" disabled={(currentPage + 1) * 30 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Successivi</button></div></div>}
     </section>
+    {reactivating && <ReactivateItemDialog item={reactivating} token={token} onClose={() => setReactivating(null)} onReactivated={() => {
+      setData(current => current ? { ...current, items: current.items.filter(item => item.id !== reactivating.id) } : null);
+      setSelected(current => current?.id === reactivating.id ? null : current);
+      setNotice(`Articolo ${reactivating.code} riattivato nel magazzino di ${reactivating.location.name}.`);
+      setReactivating(null);
+    }} />}
     {selected && <RentalUnitDialog key={selected.id} item={selected} source={selected.location} destinations={[]} token={token} readOnly retiredAt={selected.deleted_at} onClose={() => setSelected(null)} onTransferred={() => {}} />}
   </div>;
 }

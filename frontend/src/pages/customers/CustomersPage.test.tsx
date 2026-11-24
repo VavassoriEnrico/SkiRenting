@@ -307,3 +307,21 @@ it('sorts the entire customer list before pagination and returns to the first pa
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Cliente 1' } });
   expect(within(screen.getByRole('table')).getAllByRole('rowheader')[0].textContent).toBe('Cliente 41');
 });
+
+it('deletes a booking from the customer sheet and updates both counts without closing it', async () => {
+  const booking = { id: 'to-delete', booking_number: 99, location_id: 'site-b', location_name: 'Boscone', starts_on: '2026-11-01', ends_on: '2026-11-02', total: '40', paid_amount: '40' };
+  mocks.apiGet.mockImplementation((path: string) => Promise.resolve(path === '/customers'
+    ? [{ ...customers[0], booking_count: 1 }] : { customer: customers[0], booking_count: 1, bookings: [booking] }));
+  render(<CustomersPage />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Apri cliente Nicolò Rossi' }));
+  const sheet = screen.getByRole('dialog', { name: 'Prenotazioni del cliente' });
+  fireEvent.click(await within(sheet).findByRole('button', { name: 'Elimina prenotazione 99' }));
+  expect(mocks.apiDelete).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Elimina prenotazione' })).getByRole('button', { name: 'Elimina prenotazione' }));
+  await within(sheet).findByText('0 prenotazioni');
+  expect(mocks.apiDelete).toHaveBeenCalledWith('/locations/site-b/rental-bookings/to-delete', 'token', expect.any(AbortSignal));
+  expect(screen.getByRole('dialog', { name: 'Prenotazioni del cliente' })).toBe(sheet);
+  expect(within(sheet).queryByText('N° 99')).toBeNull();
+  const directory = screen.getByRole('table', { name: /Anagrafica clienti/ });
+  expect(within(directory).getByText('0')).toBeTruthy();
+});
