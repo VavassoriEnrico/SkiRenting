@@ -19,7 +19,7 @@ import { emptyPayment, paymentSummary } from './rental-payment';
 import type { RentalPaymentDraft } from './rental-payment';
 import { SeasonalPeriodFields } from '../seasonal/SeasonalPeriodFields';
 import { SeasonalRecapSection } from '../seasonal/SeasonalRecapSection';
-import { localToday } from '../seasonal/seasonal';
+import { defaultRentalStartDate } from './rental-dates';
 import type { SeasonalSettings, RentalSeason, SeasonalQuote } from '../seasonal/seasonal';
 import { RentalBookingSuccess } from './RentalBookingSuccess';
 import type { SavedBooking } from './RentalBookingSuccess';
@@ -45,7 +45,7 @@ function RentalCustomerForm({ token, locationId, locationName, onNew, seasonal }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [registered, setRegistered] = useState(false);
-  const [period, setPeriod] = useState<RentalPeriod>({ starts_on: '', ends_on: '', hotel: '' });
+  const [period, setPeriod] = useState<RentalPeriod>(() => ({ starts_on: defaultRentalStartDate(), ends_on: '', hotel: '' }));
   const [equipment, setEquipment] = useState<RentalItem[]>([]);
   const [season,setSeason]=useState<RentalSeason|null>(null);
   const [seasonError,setSeasonError]=useState('');
@@ -92,7 +92,7 @@ function RentalCustomerForm({ token, locationId, locationName, onNew, seasonal }
     if(!seasonal)return;
     const controller=new AbortController();
     apiGet<SeasonalSettings>('/seasonal-rentals/settings',token,controller.signal)
-      .then(result=>{if(!controller.signal.aborted){setSeason(result.current_season);if(result.current_season)setPeriod({starts_on:localToday(),ends_on:result.current_season.return_date,hotel:''});}})
+      .then(result=>{if(!controller.signal.aborted){setSeason(result.current_season);if(result.current_season)setPeriod(current=>({...current,ends_on:result.current_season!.return_date}));}})
       .catch(cause=>{if(!controller.signal.aborted)setSeasonError(cause instanceof Error?cause.message:'Impossibile caricare la stagione.');});
     return()=>controller.abort();
   },[token,seasonal]);

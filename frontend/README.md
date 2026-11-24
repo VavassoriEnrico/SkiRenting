@@ -424,3 +424,16 @@ conferma e segnala che le assegnazioni saranno liberate. Dopo il successo la rig
 sparisce e i conteggi si aggiornano; in caso di errore la prenotazione resta
 visibile. Le richieste duplicate sono bloccate e quelle pendenti annullate
 all'uscita. Richiede `backend/sql/029_delete_rental_bookings.sql`.
+
+La sidebar è ora condensata in Panoramica, Noleggi, Operatività, Vendite,
+Anagrafica, Magazzino e Amministrazione. Nuovo noleggio offre Giornaliero
+(predefinito) e Stagionale nella stessa pagina. Noleggi attuali e Storico noleggi
+partono da Tutti e permettono di scegliere Giornalieri o Stagionali; per questi
+ultimi rimane disponibile il selettore della stagione. Gli elenchi conservano
+formule pack, pagamenti, dettagli e cancellazione.
+
+Magazzino contiene Magazzino sede (con il nome della sede selezionata) e
+Magazzino generale; ogni pagina permette di scegliere Noleggio o Vendita. Gli
+indirizzi precedenti dei magazzini e degli stagionali reindirizzano alle nuove
+pagine con il tipo corretto. Le selezioni del tipo sono conservate nell'URL.
+Questa riorganizzazione non richiede modifiche al database.

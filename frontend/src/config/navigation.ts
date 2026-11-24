@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus, Snowflake, ChartNoAxesCombined, House, Package, ReceiptText, RotateCcw, ShoppingBag, ShoppingCart, Users, Wrench, Settings2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, ChartNoAxesCombined, House, Package, ReceiptText, RotateCcw, ShoppingCart, Users, Wrench, Settings2 } from 'lucide-react';
 
 export const navigationSections = [
   {
@@ -6,12 +6,6 @@ export const navigationSections = [
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: House },
       { href: '/analytics', label: 'Analytics', icon: ChartNoAxesCombined },
-    ],
-  },
-  {
-    id: 'directory', label: 'Anagrafica',
-    items: [
-      { href: '/clienti', label: 'Clienti', icon: Users },
     ],
   },
   {
@@ -23,11 +17,10 @@ export const navigationSections = [
     ],
   },
   {
-    id: 'seasonal-rentals', label: 'Noleggi stagionali',
+    id: 'operations', label: 'Operatività',
     items: [
-      { href: '/operativita/noleggi-stagionali', label: 'Nuovo noleggio stagionale', icon: Snowflake },
-      { href: '/noleggi/stagionali/attuali', label: 'Noleggi stagionali attuali', icon: CalendarDays },
-      { href: '/noleggi/stagionali', label: 'Storico noleggi stagionali', icon: CalendarDays },
+      { href: '/operativita/rientri', label: 'Rientri', icon: RotateCcw },
+      { href: '/operativita/riparazioni', label: 'Riparazioni', icon: Wrench },
     ],
   },
   {
@@ -38,24 +31,16 @@ export const navigationSections = [
     ],
   },
   {
-    id: 'operations', label: 'Operatività',
+    id: 'directory', label: 'Anagrafica',
     items: [
-      { href: '/operativita/rientri', label: 'Rientri', icon: RotateCcw },
-      { href: '/operativita/riparazioni', label: 'Riparazioni', icon: Wrench },
+      { href: '/clienti', label: 'Clienti', icon: Users },
     ],
   },
   {
-    id: 'local-inventory', label: 'Magazzino sede',
+    id: 'inventory', label: 'Magazzino',
     items: [
-      { href: '/materiale-noleggio', label: 'Magazzino noleggi', icon: Package },
-      { href: '/materiale-vendita', label: 'Magazzino vendite', icon: ShoppingBag },
-    ],
-  },
-  {
-    id: 'general-inventory', label: 'Magazzino generale',
-    items: [
-      { href: '/magazzino-generale', label: 'Magazzino generale noleggi', icon: Package },
-      { href: '/magazzino-generale-vendite', label: 'Magazzino generale vendite', icon: ShoppingBag },
+      { href: '/magazzino-sede', label: 'Magazzino sede', icon: Package },
+      { href: '/magazzino-generale', label: 'Magazzino generale', icon: Package },
     ],
   },
   {
@@ -70,7 +55,9 @@ export const navigation = navigationSections.flatMap((section) => section.items)
 
 
 export function getNavigationSections(locationName?: string) {
-  return navigationSections.map(section => section.id === 'local-inventory'
-    ? { ...section, label: locationName ? `Magazzino ${locationName}` : 'Magazzino sede' }
+  return navigationSections.map(section => section.id === 'inventory'
+    ? { ...section, items: section.items.map(item => item.href === '/magazzino-sede'
+      ? { ...item, label: locationName ? `Magazzino ${locationName}` : 'Magazzino sede' }
+      : item) }
     : section);
 }

@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MemoryRouter } from 'react-router-dom';
 import { RentalsPage } from './RentalsPage';
+import { UnifiedRentalsPage } from './UnifiedRentalsPage';
 import type { HistoryBooking, HistoryDetails } from './rental-history';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete:vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' }, operator: { profile: { id: 'operator', name: 'Banco' } } } }));
@@ -263,4 +265,26 @@ it('keeps the booking on deletion errors and blocks duplicate submissions',async
   expect(within(screen.getByRole('region',{name:'Elenco noleggi della sede'})).getByText('Mario Rossi')).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'Annulla'}));
   expect(within(screen.getByRole('region',{name:'Elenco noleggi della sede'})).getByText('Mario Rossi')).toBeTruthy();
+});
+
+
+it.each(['current','history'] as const)('combines daily and seasonal bookings in the %s page and filters by type and season',async(view)=>{
+  const daily={...booking,rental_kind:'daily',...(view==='history'?{status:'completed',returned_item_count:1,balance:'0'}:{})};
+  const seasonal={...daily,id:'seasonal',booking_number:150,rental_kind:'seasonal',season_id:'season',customer:{...booking.customer,first_name:'Anna',last_name:'Bianchi'}};
+  const season={id:'season',name:'2026/2027',return_date:'2027-04-30',is_current:true,created_at:'2026-11-24T10:00:00Z'};
+  mocks.get.mockImplementation((path:string)=>Promise.resolve(path==='/seasonal-rentals/settings'?{seasons:[season],current_season:season}:path.includes('seasonal-bookings')?[seasonal]:[daily,seasonal]));
+  render(<MemoryRouter><UnifiedRentalsPage view={view}/></MemoryRouter>);
+  await screen.findByText('Mario Rossi');
+  expect(screen.getByText('Anna Bianchi')).toBeTruthy();
+  expect(screen.getByRole('button',{name:'Tutti'}).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button',{name:'Giornalieri'}));
+  expect(screen.getByText('Mario Rossi')).toBeTruthy();
+  expect(screen.queryByText('Anna Bianchi')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Stagionali'}));
+  await screen.findByText('Anna Bianchi');
+  expect(screen.queryByText('Mario Rossi')).toBeNull();
+  expect((screen.getByLabelText('Stagione') as HTMLSelectElement).value).toBe('season');
+  fireEvent.click(screen.getByRole('button',{name:'Tutti'}));
+  await screen.findByText('Mario Rossi');
+  expect(screen.getByText('Anna Bianchi')).toBeTruthy();
 });

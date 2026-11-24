@@ -13,12 +13,12 @@ import type { HistoryBooking, HistoryDisplayStatus } from './rental-history';
 
 type RentalView = 'all' | 'current' | 'history';
 
-export function RentalsPage({ view = 'all', seasonId, seasonName }: { view?: RentalView; seasonId?:string; seasonName?:string }) {
+export function RentalsPage({ view = 'all', seasonId, seasonName, rentalKind='daily' }: { view?: RentalView; seasonId?:string; seasonName?:string; rentalKind?:'all'|'daily' }) {
   const { session, location } = useAuth();
-  return session && location ? <RentalHistory key={`${view}:${seasonId}:${location.id}:${session.access_token}`} view={view} seasonId={seasonId} seasonName={seasonName} token={session.access_token} locationId={location.id} locationName={location.name} /> : <p role="status">Seleziona una sede per consultare i noleggi.</p>;
+  return session && location ? <RentalHistory key={`${view}:${seasonId}:${location.id}:${session.access_token}`} rentalKind={rentalKind} view={view} seasonId={seasonId} seasonName={seasonName} token={session.access_token} locationId={location.id} locationName={location.name} /> : <p role="status">Seleziona una sede per consultare i noleggi.</p>;
 }
 
-function RentalHistory({ token, locationId, locationName, view, seasonId, seasonName }: { token: string; locationId: string; locationName: string; view: RentalView; seasonId?:string; seasonName?:string }) {
+function RentalHistory({ token, locationId, locationName, view, seasonId, seasonName, rentalKind }: { token: string; locationId: string; locationName: string; view: RentalView; seasonId?:string; seasonName?:string; rentalKind:'all'|'daily' }) {
   const isSeasonal = !!seasonId;
   const [bookings, setBookings] = useState<HistoryBooking[] | null>(null);
   const [error, setError] = useState('');
@@ -45,7 +45,7 @@ function RentalHistory({ token, locationId, locationName, view, seasonId, season
   const terms = normalizeCustomerText(query).trim().split(/\s+/);
   const invalidPeriod = !!(from && to && to < from);
   const isClosed = (booking: HistoryBooking) => ['completed', 'awaiting_payment', 'cancelled'].includes(historyStatus(booking));
-  const scopedBookings = (bookings || []).filter(booking => (isSeasonal || booking.rental_kind !== 'seasonal')
+  const scopedBookings = (bookings || []).filter(booking => (rentalKind==='all' || isSeasonal || booking.rental_kind !== 'seasonal')
     && (view === 'all' || (view === 'history' ? isClosed(booking) : !isClosed(booking))));
   const statusOptions = Object.entries(historyStatuses).filter(([value]) => view === 'all' || (view === 'history' ? ['completed','awaiting_payment','cancelled'].includes(value) : ['confirmed','preparing','active'].includes(value)));
   const filtered = scopedBookings.filter((booking) => {

@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MemoryRouter } from 'react-router-dom';
 import { OperationsPage } from './OperationsPage';
+import { NewRentalPage } from './NewRentalPage';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), auth: { session: { access_token: 'token' } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
@@ -218,4 +220,20 @@ it('retains edited contacts after an update error and prevents duplicate saves',
   await act(async()=>fail(new Error('Recapiti non salvati')));
   expect(await screen.findByRole('alert')).toHaveProperty('textContent','Recapiti non salvati');
   expect((screen.getByLabelText('Cellulare') as HTMLInputElement).value).toBe('12345');
+});
+
+
+it('opens the unified rental form as daily and switches to the seasonal form',async()=>{
+  const season={id:'season',name:'2026/2027',return_date:'2027-04-30',is_current:true,created_at:'2026-11-24T10:00:00Z'};
+  mocks.get.mockImplementation((path:string)=>Promise.resolve(path==='/seasonal-rentals/settings'?{seasons:[season],current_season:season}:path==='/hotels'?[]:customers));
+  render(<MemoryRouter><NewRentalPage/></MemoryRouter>);
+  expect(screen.getByRole('button',{name:'Giornaliero'}).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByLabelText('Rientro previsto *')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Stagionale'}));
+  await waitFor(()=>expect((screen.getByLabelText('Consegna stagionale') as HTMLInputElement).value).toBe('2027-04-30'));
+  expect(screen.getByRole('heading',{name:'Nuovo noleggio stagionale'})).toBeTruthy();
+  expect(screen.queryByLabelText('Rientro previsto *')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Giornaliero'}));
+  expect(screen.getByLabelText('Rientro previsto *')).toBeTruthy();
+  expect(screen.queryByLabelText('Consegna stagionale')).toBeNull();
 });

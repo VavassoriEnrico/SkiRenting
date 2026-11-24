@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MemoryRouter } from 'react-router-dom';
 import { GeneralInventoryPage } from './GeneralInventoryPage';
+import { UnifiedInventoryPage } from './UnifiedInventoryPage';
 import { groupGeneralItems, groupSaleStock, rowQuantity, rowSalePrice, salePrice, sortGeneralRows } from './general-inventory';
 import type { GeneralItem, SaleStock } from './general-inventory';
 import type { RentalVariant } from './rental-inventory';
@@ -343,4 +345,19 @@ it('shows total, rented and repairing cards for each site, including zero counts
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'non presente'}});
   expect(value('Madesimo','Attualmente noleggiati')).toBe('1');
   expect(value('Boscone','Attualmente in riparazione')).toBe('1');
+});
+
+
+it('switches the unified general warehouse between rental and sale data',async()=>{
+  mocks.apiGet.mockImplementation((path:string)=>Promise.resolve(path==='/sale-inventory'?{locations,categories:[category],items:[]}:inventory));
+  render(<MemoryRouter><UnifiedInventoryPage general/></MemoryRouter>);
+  await screen.findByRole('heading',{name:'Magazzino generale noleggi'});
+  expect(screen.getByRole('button',{name:'Noleggio'}).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button',{name:'Vendita'}));
+  await screen.findByRole('heading',{name:'Magazzino generale vendite'});
+  expect(mocks.apiGet).toHaveBeenCalledWith('/sale-inventory','token',expect.any(AbortSignal));
+  expect(screen.queryByRole('heading',{name:'Magazzino generale noleggi'})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Noleggio'}));
+  await screen.findByRole('heading',{name:'Magazzino generale noleggi'});
+  await screen.findByText('ANOMALY');
 });

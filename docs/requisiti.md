@@ -97,6 +97,13 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
 
 ## Controlli da fare più avanti
 
+- Sidebar condensata: gli stagionali sono poco frequenti e condividono con i
+  giornalieri Nuovo noleggio, Noleggi attuali e Storico noleggi. Nuovo noleggio
+  parte da Giornaliero; gli elenchi hanno Tutti/Giornalieri/Stagionali e la scelta
+  della stagione per gli stagionali. Magazzino sede e generale hanno ciascuno
+  la scelta Noleggio/Vendita. Solleciti avrà una pagina distinta da Rientri in
+  Operatività, da definire con l'utente prima dell'implementazione.
+
 - Bastoncini: codice generico unico 1, condiviso fra sedi e riutilizzabile in
   noleggi giornalieri e stagionali contemporanei. Prezzo configurabile nei due
   listini; può comparire più volte nella stessa prenotazione, con una riga per

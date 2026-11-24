@@ -4,9 +4,8 @@ import { AppLayout } from '../components/layout/AppLayout';
 import { AnalyticsPage } from '../pages/analytics/AnalyticsPage';
 import { DashboardPage } from '../pages/dashboard/DashboardPage';
 import { CustomersPage } from '../pages/customers/CustomersPage';
-import { RentalsPage } from '../pages/rentals/RentalsPage';
-import { GeneralInventoryPage } from '../pages/inventory/GeneralInventoryPage';
-import { InventoryPage } from '../pages/inventory/InventoryPage';
+import { UnifiedRentalsPage } from '../pages/rentals/UnifiedRentalsPage';
+import { UnifiedInventoryPage } from '../pages/inventory/UnifiedInventoryPage';
 import { SalesPage } from '../pages/sales/SalesPage';
 import { OperationsPage } from '../pages/operations/OperationsPage';
 import { RepairsPage } from '../pages/repairs/RepairsPage';
@@ -15,8 +14,7 @@ import { RequireAuth } from '../auth/RequireAuth';
 import { LoginPage } from '../pages/login/LoginPage';
 import { ManagementPage } from '../pages/management/ManagementPage';
 import { SeasonalRatesPage } from '../pages/seasonal/SeasonalRatesPage';
-import { SeasonalRentalsPage } from '../pages/seasonal/SeasonalRentalsPage';
-import { RentalCustomerPage } from '../pages/operations/RentalCustomerPage';
+import { NewRentalPage } from '../pages/operations/NewRentalPage';
 import { PromotionsPage } from '../pages/management/PromotionsPage';
 import { HotelsPage } from '../pages/management/HotelsPage';
 import { RentalRatesPage } from '../pages/management/RentalRatesPage';
@@ -35,20 +33,21 @@ export function App() {
         <Route path="/management/promozioni" element={<PromotionsPage />} />
         <Route path="/management/hotels" element={<HotelsPage />} />
         <Route path="/management/tariffe" element={<RentalRatesPage />} />
-        <Route path="/noleggi/stagionali/attuali" element={<SeasonalRentalsPage view="current"/>}/>
-        <Route path="/noleggi/stagionali" element={<SeasonalRentalsPage view="history"/>}/>
-        <Route path="/noleggi/attuali" element={<RentalsPage view="current" />} />
-        <Route path="/noleggi" element={<RentalsPage view="history" />} />
+        <Route path="/noleggi/stagionali/attuali" element={<Navigate to="/noleggi/attuali?tipo=stagionale" replace/>}/>
+        <Route path="/noleggi/stagionali" element={<Navigate to="/noleggi?tipo=stagionale" replace/>}/>
+        <Route path="/noleggi/attuali" element={<UnifiedRentalsPage view="current" />} />
+        <Route path="/noleggi" element={<UnifiedRentalsPage view="history" />} />
         <Route path="/vendite" element={<SalesPage />} />
-        <Route path="/operativita/noleggi-stagionali" element={<RentalCustomerPage seasonal/>}/>
-        <Route path="/operativita/noleggi" element={<OperationsPage mode="rental" />} />
+        <Route path="/operativita/noleggi-stagionali" element={<Navigate to="/operativita/noleggi?tipo=stagionale" replace/>}/>
+        <Route path="/operativita/noleggi" element={<NewRentalPage />} />
         <Route path="/operativita/vendite" element={<OperationsPage mode="sale" />} />
         <Route path="/operativita/rientri" element={<ReturnsPage />} />
         <Route path="/operativita/riparazioni" element={<RepairsPage />} />
-        <Route path="/magazzino-generale" element={<GeneralInventoryPage />} />
-        <Route path="/magazzino-generale-vendite" element={<GeneralInventoryPage mode="sale" />} />
-        <Route path="/materiale-noleggio" element={<InventoryPage key="rental" mode="rental" />} />
-        <Route path="/materiale-vendita" element={<InventoryPage key="sale" mode="sale" />} />
+        <Route path="/magazzino-generale" element={<UnifiedInventoryPage general/>} />
+        <Route path="/magazzino-generale-vendite" element={<Navigate to="/magazzino-generale?tipo=vendita" replace/>} />
+        <Route path="/magazzino-sede" element={<UnifiedInventoryPage/>} />
+        <Route path="/materiale-noleggio" element={<Navigate to="/magazzino-sede" replace/>} />
+        <Route path="/materiale-vendita" element={<Navigate to="/magazzino-sede?tipo=vendita" replace/>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
       </Route>
