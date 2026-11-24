@@ -8,8 +8,8 @@ vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
 vi.mock('../../lib/api', () => ({ apiGet: mocks.apiGet, apiPatch:mocks.apiPatch, apiDelete:mocks.apiDelete }));
 
 const customers = [
-  { id: 'one', first_name: 'Nicolò', last_name: 'Rossi', email: 'famiglia@example.test', phone: '+39 333-001234', notes: 'Scarponi personali\nSeconda nota' },
-  { id: 'two', first_name: 'Anna', last_name: 'Bianchi', email: null, phone: null, notes: null },
+  { id: 'one', first_name: 'Nicolò', last_name: 'Rossi', email: 'famiglia@example.test', phone: '+39 333-001234', booking_count: 3, notes: 'Scarponi personali\nSeconda nota' },
+  { id: 'two', first_name: 'Anna', last_name: 'Bianchi', email: null, phone: null, booking_count: 0, notes: null },
 ];
 
 beforeEach(() => {
@@ -26,12 +26,12 @@ describe('Clienti', () => {
     await screen.findByText('Nicolò');
     expect(mocks.apiGet).toHaveBeenCalledWith('/customers', 'token', expect.any(AbortSignal));
     const headers = within(screen.getByRole('table')).getAllByRole('columnheader');
-    expect(headers.map((header) => header.textContent)).toEqual(['Nome', 'Cognome', 'Email', 'Telefono', 'Data di nascita', 'Livello', 'Lingua', 'Paese', 'Note', 'Azioni']);
+    expect(headers.map((header) => header.textContent)).toEqual(['Nome', 'Cognome', 'Email', 'Telefono', 'Data di nascita', 'Note', 'Numero di prenotazioni', 'Azioni']);
     expect(screen.getByText('famiglia@example.test')).toBeTruthy();
     expect(screen.getByText('+39 333-001234')).toBeTruthy();
     expect(screen.getByText(/Scarponi personali/)).toBeTruthy();
     const anna = screen.getByText('Anna').closest('tr')!;
-    expect(within(anna).getAllByText('—')).toHaveLength(7);
+    expect(within(anna).getAllByText('—')).toHaveLength(4);
   });
 
   it('shows imported profile information with Italian dates and level labels', async () => {
@@ -39,9 +39,19 @@ describe('Clienti', () => {
     render(<CustomersPage />);
     await screen.findByText('Nicolò');
     expect(screen.getByText('15/04/1990')).toBeTruthy();
-    expect(screen.getByText('Intermedio')).toBeTruthy();
-    expect(screen.getByText('IT')).toBeTruthy();
-    expect(screen.getByText('CH')).toBeTruthy();
+    expect(screen.queryByText('Intermedio')).toBeNull();
+    expect(screen.queryByText('IT')).toBeNull();
+    expect(screen.queryByText('CH')).toBeNull();
+    const row = screen.getByText('Nicolò').closest('tr')!;
+    expect(within(row).getByText('3')).toBeTruthy();
+    const profile = { ...customers[0], birth_date: '1990-04-15', skill_level: 'intermediate', language: 'IT', country_code: 'CH' };
+    mocks.apiGet.mockResolvedValue({ customer: profile, booking_count: 3, bookings: [] });
+    fireEvent.click(within(row).getByRole('button', { name: 'Apri cliente Nicolò Rossi' }));
+    const dialog = screen.getByRole('dialog');
+    await within(dialog).findByText('3 prenotazioni');
+    expect(within(dialog).getByText('Intermedio')).toBeTruthy();
+    expect(within(dialog).getByText('IT')).toBeTruthy();
+    expect(within(dialog).getByText('CH')).toBeTruthy();
   });
 
   it('edits a customer and sends only changed fields', async () => {
@@ -121,10 +131,46 @@ describe('Clienti', () => {
     expect(rows.map((row) => within(row).getByRole('rowheader').textContent)).toEqual(['N° 130','N° 110']);
     expect(within(rows[0]).getByText('20 nov 2026')).toBeTruthy();
     expect(within(rows[0]).getByText('22 nov 2026')).toBeTruthy();
+    expect(within(rows[0]).getByText('3 giorni')).toBeTruthy();
+    expect(within(rows[1]).getByText('2 giorni')).toBeTruthy();
     expect(rows[0].textContent?.replace(/\s/g,'')).toContain('85,00€50,00€');
     expect(within(dialog).getByText('Dalla più recente alla più vecchia')).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button',{name:'Chiudi prenotazioni cliente'}));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it.each([false, true])('opens the booked material and returns to the customer, imported=%s', async (isLegacy) => {
+    const booking = {
+      id: 'booking-1', booking_number: 130, customer_id: customers[0].id,
+      location_id: 'site-b', location_name: 'Boscone', starts_on: '2025-12-01', ends_on: '2025-12-03',
+      total: '85.00', paid_amount: '85.00', balance: '0', status: 'completed',
+      is_legacy: isLegacy, legacy_paid_in_full: isLegacy, legacy_code: isLegacy ? 'OLD-130' : null,
+      rental_kind: isLegacy ? 'legacy' : 'daily', customer: customers[0], hotel: null,
+      created_by: null, created_at: '2026-11-24T10:00:00Z', updated_at: '2026-11-24T10:00:00Z',
+      discount_percent: '0', subtotal: '85', discount_amount: '0', item_count: 1, returned_item_count: 1,
+      items: [{ id: 'item-1', rental_inventory_id: null, code_snapshot: 'SCI123', brand_snapshot: 'Atomic',
+        model_snapshot: 'Redster', size_snapshot: '170 cm', daily_price: null, amount: '85',
+        legacy_reported_paid_amount: '85', legacy_returned_on: '2025-12-03', delivered_at: null, returned_at: null }],
+      payments: [],
+    };
+    mocks.apiGet.mockImplementation((path: string) => Promise.resolve(
+      path === '/customers' ? customers : path === '/customers/one/bookings'
+        ? { customer: customers[0], booking_count: 1, bookings: [booking] } : booking));
+    render(<CustomersPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri cliente Nicolò Rossi' }));
+    const customerDialog = screen.getByRole('dialog', { name: 'Prenotazioni del cliente' });
+    const openBooking = await within(customerDialog).findByRole('button', { name: `Apri noleggio ${isLegacy ? 'OLD-130' : '130'}` });
+    fireEvent.click(isLegacy ? openBooking : openBooking.closest('tr')!);
+    const detail = await screen.findByRole('dialog', { name: isLegacy ? 'Noleggio importato · OLD-130' : 'Noleggio n. 130' });
+    expect(mocks.apiGet).toHaveBeenCalledWith('/locations/site-b/rental-bookings/booking-1', 'token', expect.any(AbortSignal));
+    expect(within(detail).getByText('SCI123')).toBeTruthy();
+    expect(within(detail).getByText('Atomic')).toBeTruthy();
+    expect(within(detail).getByText('Redster')).toBeTruthy();
+    expect(within(detail).getByText('170 cm')).toBeTruthy();
+    fireEvent.click(within(detail).getByRole('button', { name: 'Chiudi dettaglio noleggio' }));
+    expect(screen.getByRole('dialog', { name: 'Prenotazioni del cliente' })).toBe(customerDialog);
+    expect(within(customerDialog).getByText('1 prenotazione')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: /Noleggio n\.|Noleggio importato/ })).toBeNull();
   });
 
   it('distinguishes booking load errors from a customer with no bookings and allows retry', async () => {

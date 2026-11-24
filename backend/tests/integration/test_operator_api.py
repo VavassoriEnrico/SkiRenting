@@ -97,6 +97,17 @@ def api(monkeypatch):
             return httpx.Response(200,json=None)
         if request.url.path == "/rest/v1/rental_bookings":
             assert request.method == "GET"
+            if request.url.params.get('select') == 'id,customer_id':
+                locations = request.url.params['location_id']
+                allowed_ids = locations[4:-1].split(',')
+                assert locations.startswith('in.(') and set(allowed_ids) <= set(state['locations'])
+                assert request.url.params['deleted_at'] == 'is.null'
+                assert request.url.params['order'] == 'id'
+                rows = [row for row in state.get('bookings', [])
+                        if row['location_id'] in allowed_ids and not row.get('deleted_at')
+                        and (not row.get('is_legacy') or row.get('legacy_ready', True))]
+                offset = int(request.url.params['offset'])
+                return httpx.Response(200, json=rows[offset:offset + 300])
             if 'customer_id' in request.url.params:
                 locations = request.url.params['location_id']
                 assert locations.startswith('in.(')
@@ -110,6 +121,8 @@ def api(monkeypatch):
             rows = state.get("bookings", [])
             if request.url.params.get("deleted_at") == "is.null":
                 rows = [row for row in rows if not row.get("deleted_at")]
+            if request.url.params.get('is_legacy')=='eq.false':
+                rows=[row for row in rows if not row.get('is_legacy')]
             if 'rental_kind' in request.url.params:
                 assert request.url.params['rental_kind']=='eq.seasonal'
                 rows=[row for row in rows if row.get('rental_kind')=='seasonal' and request.url.params['season_id']==f"eq.{row.get('season_id')}"]
@@ -120,7 +133,7 @@ def api(monkeypatch):
                 rows = [r for r in rows if request.url.params["id"] == f"eq.{r['id']}"]
             if "status" in request.url.params:
                 statuses = request.url.params['status']
-                assert statuses in ('in.(completed,cancelled)', 'in.(confirmed,preparing,active,completed)')
+                assert statuses in ('in.(completed,cancelled)', 'in.(confirmed,preparing,active,completed)', 'in.(completed,cancelled,imported)')
                 rows = [r for r in rows if r['status'] in statuses[4:-1].split(',')]
             if 'ends_on' in request.url.params:
                 rows = [r for r in rows if request.url.params['ends_on'] == f"eq.{r['ends_on']}"]
@@ -672,7 +685,7 @@ def test_customer_create_and_directory_read(api):
         "email": "mario@example.test", "phone": "+39 001234", "notes": "Nota",
         "birth_date": None, "skill_level": None, "language": None, "country_code": None, "is_legacy": False,
     }
-    assert client.get("/api/v1/customers", headers=HEADERS).json() == [response.json()]
+    assert client.get("/api/v1/customers", headers=HEADERS).json() == [{**response.json(), "booking_count": 0}]
 
 
 def test_customer_create_optional_values_and_homonyms(api):
@@ -1343,7 +1356,7 @@ def test_customer_profile_fields_are_normalized_and_returned(api):
     body = response.json()
     assert {key: body[key] for key in ['birth_date','skill_level','language','country_code']} == {
         'birth_date':'1990-04-15', 'skill_level':'intermediate', 'language':'IT', 'country_code':'CH'}
-    assert client.get('/api/v1/customers', headers=HEADERS).json() == [body]
+    assert client.get('/api/v1/customers', headers=HEADERS).json() == [{**body, 'booking_count': 0}]
     payload = json.loads(next(r.content for r in state['requests'] if r.method == 'POST'))
     assert payload['birth_date'] == '1990-04-15'
 
@@ -2044,3 +2057,46 @@ def test_delete_booking_errors_and_authorization(api,code,status):
     assert 'delete_booking_payload' not in state
     state['delete_booking_error']=code
     assert client.delete(path,headers=HEADERS).status_code==status
+
+
+
+def test_imported_bookings_are_paid_in_full_and_keep_the_original_amounts(api):
+    client,state=api
+    header={**history_header(),'customer':None,'customer_id':None,'created_by':None,'status':'imported',
+            'rental_kind':'legacy','is_legacy':True,'legacy_paid_in_full':True,'legacy_code':'OLD-100',
+            'legacy_customer_id':'old-person','legacy_customer_snapshot':{'nome':'Mario','cognome':'Rossi','telefono':'12345'},
+            'legacy_reported_paid_amount':'8.00'}
+    state['bookings']=[header]
+    items,_=history_children(header['id'])
+    for item,amount in zip(items,['10.00','-2.00']):
+        item.update(rental_inventory_id=None,amount=None,is_legacy=True,legacy_reported_paid_amount=amount,legacy_returned_on=None)
+    state['history_items']=items
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/rental-bookings?scope=all',headers=HEADERS).json()==[]
+    response=client.get(f'/api/v1/locations/{LOCATION_A}/rental-bookings?scope=all&include_legacy=true',headers=HEADERS)
+    assert response.status_code==200
+    booking=response.json()[0]
+    assert booking['total']==booking['paid_amount']=='8.00' and booking['balance']=='0'
+    assert booking['status']=='completed' and booking['legacy_code']=='OLD-100'
+    assert booking['customer']['first_name']=='Mario' and booking['customer_id'] is None
+    detail=client.get(f"/api/v1/locations/{LOCATION_A}/rental-bookings/{header['id']}",headers=HEADERS)
+    assert detail.status_code==200 and detail.json()['payments']==[]
+    assert detail.json()['items'][1]['legacy_reported_paid_amount']=='-2.00'
+
+
+def test_customer_directory_counts_all_visible_bookings_across_pages(api):
+    client, state = api
+    state['customers'] = [{'id': USER_ID, 'first_name': 'Mario', 'last_name': 'Rossi'}]
+    state['locations'] = [LOCATION_A]
+    state['bookings'] = [
+        {'id': str(UUID(int=index + 1)), 'customer_id': USER_ID, 'location_id': LOCATION_A,
+         'is_legacy': index % 2 == 0, 'status': 'imported' if index % 2 == 0 else 'completed'}
+        for index in range(602)
+    ] + [
+        {'id': 'removed', 'customer_id': USER_ID, 'location_id': LOCATION_A, 'deleted_at': '2026-11-24'},
+        {'id': 'other-site', 'customer_id': USER_ID, 'location_id': LOCATION_B},
+        {'id': 'partial', 'customer_id': USER_ID, 'location_id': LOCATION_A, 'is_legacy': True, 'legacy_ready': False},
+        {'id': 'unlinked', 'customer_id': None, 'location_id': LOCATION_A},
+    ]
+    response = client.get('/api/v1/customers', headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()[0]['booking_count'] == 602

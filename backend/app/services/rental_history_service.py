@@ -2,7 +2,7 @@ from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import httpx
 from fastapi import HTTPException
@@ -20,6 +20,28 @@ def enrich(headers: list[dict], items: list[dict], payments: list[dict], details
     result = []
     for header in headers:
         booking_items = by_item[header['id']]
+        if header.get('is_legacy'):
+            snapshot = header.get('legacy_customer_snapshot') or {}
+            customer = header.get('customer') or {
+                'id': str(uuid5(UUID('47acfbde-831e-4fce-afb9-294380863af5'), f"{header.get('legacy_customer_id')}")),
+                'first_name': snapshot.get('nome', ''), 'last_name': snapshot.get('cognome', ''),
+                'email': snapshot.get('email') or None, 'phone': snapshot.get('telefono') or None,
+                'is_legacy': True,
+            }
+            paid = Decimal(str(header['legacy_reported_paid_amount']))
+            settled = header.get('legacy_paid_in_full', False)
+            row = {**header, 'customer': customer, 'discount_percent': None,
+                   'legacy_hotel_name': snapshot.get('albergo') or None,
+                   'status': 'completed' if settled else 'imported',
+                   'item_count': len(booking_items), 'rental_formula': 'single',
+                   'returned_item_count': sum(bool(item.get('legacy_returned_on')) for item in booking_items),
+                   'subtotal': None, 'discount_amount': None, 'total': paid if settled else None,
+                   'balance': Decimal(0) if settled else None, 'paid_amount': paid}
+            if details:
+                row.update(items=[{**item, 'brand_snapshot': item.get('brand_snapshot') or '',
+                                  'model_snapshot': item.get('model_snapshot') or ''} for item in booking_items], payments=[])
+            result.append(row)
+            continue
         has_pack = any(item.get('seasonal_pricing') == 'pack' or item.get('seasonal_pack_main_id') for item in booking_items)
         has_single = any(item.get('seasonal_pricing') not in ('pack', 'included')
                          and not item.get('seasonal_pack_main_id') for item in booking_items)
@@ -39,10 +61,10 @@ def enrich(headers: list[dict], items: list[dict], payments: list[dict], details
     return result
 
 
-def read_history(client: httpx.Client, user_id: UUID, location_id: UUID, history_only=True, booking_id: UUID | None = None):
+def read_history(client: httpx.Client, user_id: UUID, location_id: UUID, history_only=True, booking_id: UUID | None = None, include_legacy=False):
     get_authorized_location(client, user_id, location_id)
     try:
-        headers = rental_history_repository.get_headers(client, location_id, history_only, booking_id)
+        headers = rental_history_repository.get_headers(client, location_id, history_only, booking_id, include_legacy)
         if booking_id and not headers:
             raise HTTPException(404, 'Noleggio non trovato in questa sede.')
         items, payments = rental_history_repository.get_children(client, headers)
@@ -59,7 +81,7 @@ def history_error(error: httpx.HTTPError) -> HTTPException:
         except ValueError:
             body = {}
         if isinstance(body, dict) and body.get('code') in ('42703', 'PGRST204'):
-            return HTTPException(503, 'Verifica 015, 021, 023 e 029_delete_rental_bookings.sql in Supabase.')
+            return HTTPException(503, 'Verifica le query noleggio, inclusa 030_import_legacy_rentals.sql in Supabase.')
         if isinstance(body, dict) and body.get('code') in ('PGRST205', '42P01'):
             return HTTPException(503, 'Tabelle noleggio non disponibili. Verificare la query 007.')
         return HTTPException(503, 'Impossibile caricare i noleggi da Supabase.')

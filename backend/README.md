@@ -510,3 +510,21 @@ giornalieri/stagionali e attuali/storici; chiamate ripetute sono idempotenti.
 Gli elenchi e i dettagli applicano deleted_at is null, inclusa la scheda cliente.
 Le righe contabili e di rientro sono conservate ma non sono più modificabili;
 le assegnazioni sono liberate senza segnare gli articoli come riconsegnati.
+
+Importazione storica (030): prenotazioni e righe materiali sono nelle tabelle
+esistenti, marcate is_legacy. `include_legacy=true` sull'elenco include il CSV;
+gli elenchi operativi lo escludono per evitare migliaia di righe inutili. La
+scheda cliente include tutte le prenotazioni associate, ordinate per periodo.
+Dettaglio e cestino riusano gli endpoint esistenti. Le celle originali restano
+in rental_import_rows, leggibile solo dall'amministrazione.
+
+Politica concordata: legacy_paid_in_full=true, totale e pagato pari agli importi
+originali e saldo zero. Nessuna transazione viene creata senza data e metodo del
+pagamento; tariffe giornaliere e pack non ricostruibili restano non indicati.
+I nuovi noleggi continuano a rispettare i vincoli originali.
+
+La prova `scripts/booking_import/local_trial.py` usa solo PostgreSQL temporaneo
+locale e verifica ogni cella, prenotazioni multiple, risposte API saldate, RLS e
+spazio di tabelle/indici. Con `--import-dir private/booking-imports/importazione`
+valida i CSV finali nelle stesse tabelle del gestionale. Non legge connessioni o
+credenziali Supabase. Le istruzioni del caricamento sono in backend/sql/README.md.

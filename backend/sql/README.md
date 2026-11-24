@@ -633,3 +633,37 @@ Gli articoli con stato manutenzione/perso/venduto mantengono i propri vincoli.
 La RPC blocca gli esemplari in ordine e la prenotazione durante la rimozione;
 pagamenti e rientri successivi vengono rifiutati. Eliminare nuovamente la stessa
 prenotazione è idempotente. La query è ripetibile e non elimina dati esistenti.
+
+## 030 — Storico nelle tabelle noleggio esistenti
+
+Eseguire [030_import_legacy_rentals.sql](030_import_legacy_rentals.sql) dopo 029.
+Adatta rental_bookings e rental_booking_items ai record storici; non crea tabelle
+parallele di prenotazioni. rental_import_batches e rental_import_rows sono solo
+tracciamento amministrativo e conservazione delle celle originali.
+
+Generare i file con `scripts/booking_import/generate.py --source /percorso/file.csv`
+usando il Python del backend. File privati in `private/booking-imports/importazione`,
+esclusi da Git. Ordine del caricamento:
+
+1. Eseguire 030 nel SQL Editor.
+2. Eseguire `01_inizializza.sql` (sede Madesimo, oppure correggere la sede prima).
+3. Importare `02_prenotazioni.csv` in **rental_bookings** dal Table Editor.
+4. Importare `03_materiali_noleggiati.csv` in **rental_booking_items**.
+5. Importare `04_righe_originali.csv` in **rental_import_rows**.
+6. Eseguire `05_verifica_e_collega.sql` nel SQL Editor.
+
+La finalizzazione controlla conteggi e importi, associa solo clienti con
+corrispondenza esatta e univoca e rende visibile il caricamento agli operatori.
+Prima di quel momento lo storico caricato è nascosto. In caso di errore verificare
+le tabelle prima di ripetere gli stessi CSV: gli UUID stabili impediscono doppioni.
+
+Politica concordata: tutti saldati, totale=pagato CSV e residuo zero. Data e metodo
+non sono inventati e rental_payments non riceve transazioni. Gli importi negativi
+restano invariati. Le anagrafiche ambigue restano da associare, ma i loro noleggi
+sono conservati e consultabili. Il vecchio materiale è conservato negli snapshot,
+senza creare esemplari fittizi né occupare il magazzino attuale.
+
+Gli adattamenti nullable sono vincolati ai record is_legacy; i nuovi noleggi
+mantengono cliente, esemplari e importi obbligatori. Lo stato tecnico imported
+e rental_kind legacy distinguono i dati precedenti; l'API li presenta come conclusi
+quando legacy_paid_in_full=true. Noleggi attuali e rientri restano operativi.

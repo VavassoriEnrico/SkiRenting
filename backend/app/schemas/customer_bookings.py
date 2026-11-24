@@ -14,8 +14,10 @@ class CustomerBookingRead(BaseModel):
     location_name: str
     starts_on: date
     ends_on: date
-    total: Decimal
+    total: Decimal | None
     paid_amount: Decimal
+    is_legacy: bool = False
+    legacy_code: str | None = None
 
 
 class CustomerBookingsRead(BaseModel):

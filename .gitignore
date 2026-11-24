@@ -16,3 +16,4 @@ dist/
 
 # Importazioni clienti generate: contengono dati personali.
 /private/customer-imports/
+/private/booking-imports/

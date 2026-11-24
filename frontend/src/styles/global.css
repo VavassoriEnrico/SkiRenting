@@ -669,3 +669,5 @@ h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.8px; }
 .history-bookings-table thead .rental-actions-cell { background: #f0f1fa; z-index: 2; }
 
 .page-mode-switch { margin-bottom: 24px; }
+
+.history-status-imported { background: #ede9fe; border-color: #c4b5fd; color: #6b21a8; }

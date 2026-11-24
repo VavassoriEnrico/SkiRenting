@@ -10,9 +10,13 @@ from app.services.operator_service import get_operator_session
 
 def list_customers(client: httpx.Client, user_id: UUID) -> list[dict]:
     # Anagrafica condivisa: serve un profilo operatore con almeno una sede.
-    get_operator_session(client, user_id)
+    operator = get_operator_session(client, user_id)
     try:
-        return customer_repository.list_customers(client)
+        customers = customer_repository.list_customers(client)
+        if not customers:
+            return []
+        counts = customer_repository.booking_counts(client, [str(site.id) for site in operator.locations])
+        return [{**customer, 'booking_count': counts[customer['id']]} for customer in customers]
     except httpx.HTTPStatusError as error:
         try:
             body = error.response.json()

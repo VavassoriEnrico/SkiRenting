@@ -9,6 +9,7 @@ export type Customer = {
   phone: string | null;
   notes: string | null;
   is_legacy?: boolean;
+  booking_count?: number;
   birth_date?: string | null;
   skill_level?: SkillLevel | null;
   language?: string | null;

@@ -65,7 +65,8 @@ def confirmation_database():
                              '026_generic_pole_quantities.sql', '026_generic_pole_quantities.sql',
                              '027_daily_pack_rates.sql', '027_daily_pack_rates.sql',
                              '028_apply_daily_packs.sql', '028_apply_daily_packs.sql',
-                             '029_delete_rental_bookings.sql', '029_delete_rental_bookings.sql']:
+                             '029_delete_rental_bookings.sql', '029_delete_rental_bookings.sql',
+                             '030_import_legacy_rentals.sql', '030_import_legacy_rentals.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -1114,3 +1115,35 @@ def test_delete_booking_rejects_foreign_site_and_protects_preserved_payments(set
     with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
         conn.execute('set local role anon')
         conn.execute('select skirenting_delete_rental_booking(%s,%s)',(SITE_A,booking['id']))
+
+
+
+def test_legacy_import_uses_existing_tables_and_preserves_new_booking_requirements(setup):
+    conn,ids,*_=setup
+    batch=str(uuid4()); booking_id=str(uuid4()); item_id=str(uuid4())
+    conn.execute('reset role')
+    conn.execute("insert into rental_import_batches(id,source_filename,source_sha256,source_headers,expected_rows,expected_bookings,location_id) values(%s,'fixture.csv',%s,'[]',1,1,%s)",(batch,'a'*64,SITE_A))
+    conn.execute("insert into rental_bookings(id,is_legacy,legacy_paid_in_full,legacy_batch_id,legacy_code,legacy_customer_id,legacy_customer_snapshot,legacy_reported_paid_amount,starts_on,ends_on,status,rental_kind) values(%s,true,true,%s,'OLD1','person','{\"nome\":\"Mario\",\"cognome\":\"Rossi\"}',-2,'2025-12-01','2025-12-03','imported','legacy')",(booking_id,batch))
+    conn.execute("insert into rental_booking_items(id,booking_id,code_snapshot,brand_snapshot,model_snapshot,legacy_reported_paid_amount) values(%s,%s,'OLD-UNIT','','',-2)",(item_id,booking_id))
+    conn.execute('insert into rental_import_rows(batch_id,source_row,booking_id,item_id,raw_data) values(%s,1,%s,%s,%s)',(batch,booking_id,item_id,Jsonb({'barcode':'OLD-UNIT','totale_pagato':'-2,00'})))
+    conn.execute('set local role authenticated')
+    assert conn.execute('select count(*) from rental_bookings where id=%s',(booking_id,)).fetchone()[0]==0
+    conn.execute('reset role')
+    result=conn.execute('select skirenting_finalize_rental_import(%s)',(batch,)).fetchone()[0]
+    assert result['bookings']==result['items']==result['original_rows']==1
+    assert conn.execute('select count(*) from rental_payments where booking_id=%s',(booking_id,)).fetchone()[0]==0
+    conn.execute('set local role authenticated')
+    assert conn.execute('select legacy_paid_in_full from rental_bookings where id=%s',(booking_id,)).fetchone()[0] is True
+    assert conn.execute('select rental_inventory_id,amount,legacy_reported_paid_amount from rental_booking_items where id=%s',(item_id,)).fetchone()==(None,None,-2)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege),conn.transaction():
+        conn.execute('select * from rental_import_rows')
+    with pytest.raises(psycopg.errors.RaiseException),conn.transaction():
+        record_payment(conn,booking_id,amount='1')
+    conn.execute('reset role')
+    with pytest.raises(psycopg.errors.RaiseException,match='Cliente non più disponibile'),conn.transaction():
+        conn.execute("insert into rental_bookings(customer_id,location_id,starts_on,ends_on,created_by) values(null,%s,'2026-12-01','2026-12-03',%s)",(SITE_A,USER_A))
+    conn.execute('set local role authenticated')
+    normal=confirm(conn,payload(ids))
+    conn.execute('reset role')
+    with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
+        conn.execute("insert into rental_booking_items(booking_id,rental_inventory_id,code_snapshot,brand_snapshot,model_snapshot,amount) values(%s,%s,'SECOND','Marca','Modello',null)",(normal['id'],ids[1]))

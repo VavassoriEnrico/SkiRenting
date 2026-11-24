@@ -1,6 +1,9 @@
+from collections import Counter
 from uuid import UUID
 
 import httpx
+
+from app.repositories.rental_inventory_repository import read_all
 
 CUSTOMER_FIELDS = 'id,first_name,last_name,email,phone,notes,birth_date,skill_level,language,country_code,is_legacy'
 
@@ -57,3 +60,11 @@ def get_customer(client: httpx.Client, customer_id: UUID) -> dict | None:
     response.raise_for_status()
     rows = response.json()
     return rows[0] if rows else None
+
+
+def booking_counts(client: httpx.Client, location_ids: list[str]) -> Counter:
+    rows = read_all(client, 'rental_bookings', {
+        'select': 'id,customer_id', 'deleted_at': 'is.null',
+        'location_id': f"in.({','.join(location_ids)})", 'order': 'id',
+    })
+    return Counter(row['customer_id'] for row in rows if row.get('customer_id'))

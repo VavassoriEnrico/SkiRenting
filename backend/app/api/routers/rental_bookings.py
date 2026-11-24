@@ -37,8 +37,9 @@ def today_returns(location_id: UUID, user_id: CurrentUserId, client: SupabaseCli
 def list_bookings(
     location_id: UUID, user_id: CurrentUserId, client: SupabaseClient,
     scope: Literal['history', 'all'] = 'all',
+    include_legacy: bool = False,
 ):
-    return read_history(client, user_id, location_id, history_only=scope == 'history')
+    return read_history(client, user_id, location_id, history_only=scope == 'history', include_legacy=include_legacy)
 
 
 @router.get('/{location_id}/rental-bookings/{booking_id}', response_model=HistoryBookingDetails)

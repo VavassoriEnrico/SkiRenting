@@ -8,13 +8,13 @@ import { historyMoney } from '../rentals/rental-history';
 import type { HistoryBooking, HistoryDetails } from '../rentals/rental-history';
 
 export function ReturnPaymentDialog({ booking, token, locationId, onClose, onSaved }: {
-  booking: Pick<HistoryBooking, 'id' | 'booking_number' | 'customer' | 'balance'>; token: string; locationId: string; onClose: () => void; onSaved: (booking: HistoryDetails) => void;
+  booking: Pick<HistoryBooking, 'id' | 'booking_number' | 'customer' | 'balance'>; token: string; locationId: string; onClose: () => void; onSaved: (booking: HistoryDetails & {total:string;balance:string}) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   const [paymentId, setPaymentId] = useState(() => crypto.randomUUID());
-  const [amount, setAmount] = useState(booking.balance);
+  const [amount, setAmount] = useState(booking.balance || '');
   const [method, setMethod] = useState('');
   const [otherMethod, setOtherMethod] = useState('');
   const [paidAt, setPaidAt] = useState(italianPaymentTime);
@@ -33,7 +33,7 @@ export function ReturnPaymentDialog({ booking, token, locationId, onClose, onSav
     inFlight.current = true; setSaving(true); setError('');
     const controller = new AbortController(); request.current = controller;
     try {
-      const result = await apiPost<HistoryDetails>(`/locations/${locationId}/rental-bookings/${booking.id}/payments`, token, {
+      const result = await apiPost<HistoryDetails & {total:string;balance:string}>(`/locations/${locationId}/rental-bookings/${booking.id}/payments`, token, {
         payment_id: paymentId, amount: (cents! / 100).toFixed(2), payment_method: paymentMethod,
         paid_at_local: paidAt, notes: notes.trim() || null,
       }, controller.signal);

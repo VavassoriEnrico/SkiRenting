@@ -437,3 +437,12 @@ Magazzino generale; ogni pagina permette di scegliere Noleggio o Vendita. Gli
 indirizzi precedenti dei magazzini e degli stagionali reindirizzano alle nuove
 pagine con il tipo corretto. Le selezioni del tipo sono conservate nell'URL.
 Questa riorganizzazione non richiede modifiche al database.
+
+Lo storico importato con 030 appare in **Storico noleggi → Tutti** e nelle schede
+dei clienti associati. Conserva tutte le prenotazioni dello stesso cliente, con
+codice originale e dicitura «Storico importato». La politica concordata le
+presenta come concluse e interamente saldate: totale=pagato CSV e residuo zero.
+Il dettaglio conserva le riconsegne note e gli importi originali, senza inventare
+metodi, date di pagamento o pack. Le anagrafiche ambigue sono segnalate, senza
+perdere le prenotazioni. Ricerca, filtri, ordine cronologico e cestino rimangono
+disponibili; il materiale vecchio non modifica le disponibilità attuali.

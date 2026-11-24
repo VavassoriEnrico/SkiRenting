@@ -8,23 +8,26 @@ from app.repositories.customer_repository import CUSTOMER_FIELDS
 
 HEADER_FIELDS = (
     'id,booking_number,customer_id,location_id,starts_on,ends_on,status,discount_percent,promotion_id,promotion_name,rental_kind,season_id,notes,'
+    'is_legacy,legacy_paid_in_full,legacy_code,legacy_customer_id,legacy_customer_snapshot,legacy_reported_paid_amount,'
     f'created_by,created_at,updated_at,customer:customers({CUSTOMER_FIELDS}),'
     'hotel:hotels(id,name)'
 )
 ITEM_FIELDS = (
     'id,booking_id,rental_inventory_id,code_snapshot,brand_snapshot,model_snapshot,size_snapshot,'
-    'daily_price,amount,seasonal_pricing,seasonal_pack_main_id,delivered_at,returned_at,created_at,updated_at'
+    'daily_price,amount,is_legacy,legacy_reported_paid_amount,legacy_returned_on,seasonal_pricing,seasonal_pack_main_id,delivered_at,returned_at,created_at,updated_at'
 )
 PAYMENT_FIELDS = 'id,booking_id,payment_method,amount,paid_at,created_by,notes,created_at'
 
 
-def get_headers(client: httpx.Client, location_id: UUID, history_only: bool, booking_id: UUID | None = None):
+def get_headers(client: httpx.Client, location_id: UUID, history_only: bool, booking_id: UUID | None = None, include_legacy=False):
     params = {'select': HEADER_FIELDS, 'location_id': f'eq.{location_id}', 'deleted_at': 'is.null',
               'order': 'starts_on.desc,booking_number.desc,id'}
     if history_only:
-        params['status'] = 'in.(completed,cancelled)'
+        params['status'] = 'in.(completed,cancelled,imported)' if include_legacy else 'in.(completed,cancelled)'
     if booking_id:
         params['id'] = f'eq.{booking_id}'
+    elif not include_legacy:
+        params['is_legacy'] = 'eq.false'
     return read_all(client, 'rental_bookings', params)
 
 

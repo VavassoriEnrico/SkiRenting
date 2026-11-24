@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { RentalsPage } from './RentalsPage';
 import { UnifiedRentalsPage } from './UnifiedRentalsPage';
-import type { HistoryBooking, HistoryDetails } from './rental-history';
+import { historyDuration, type HistoryBooking, type HistoryDetails } from './rental-history';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete:vi.fn(), auth: { session: { access_token: 'token' }, location: { id: 'site-a', name: 'Madesimo' }, operator: { profile: { id: 'operator', name: 'Banco' } } } }));
 vi.mock('../../auth/AuthProvider', () => ({ useAuth: () => mocks.auth }));
@@ -65,6 +65,10 @@ describe('Storico reale di tutti i noleggi', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apri noleggio 125' }));
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByRole('heading', { name: 'Noleggio n. 125' });
+    const period = within(dialog).getByRole('region', { name: 'Periodo del noleggio' });
+    expect(within(period).getByText('01 dic 2026')).toBeTruthy();
+    expect(within(period).getByText('03 dic 2026')).toBeTruthy();
+    expect(within(period).getByText('3 giorni')).toBeTruthy();
     expect(within(dialog).getByText('Nota prenotazione')).toBeTruthy();
     expect(within(dialog).getByText('Nota cliente')).toBeTruthy();
     expect(within(dialog).getByText('Nota pagamento')).toBeTruthy();
@@ -278,7 +282,7 @@ it.each(['current','history'] as const)('combines daily and seasonal bookings in
   expect(screen.getByText('Anna Bianchi')).toBeTruthy();
   expect(screen.getByRole('button',{name:'Tutti'}).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button',{name:'Giornalieri'}));
-  expect(screen.getByText('Mario Rossi')).toBeTruthy();
+  await screen.findByText('Mario Rossi');
   expect(screen.queryByText('Anna Bianchi')).toBeNull();
   fireEvent.click(screen.getByRole('button',{name:'Stagionali'}));
   await screen.findByText('Anna Bianchi');
@@ -287,4 +291,34 @@ it.each(['current','history'] as const)('combines daily and seasonal bookings in
   fireEvent.click(screen.getByRole('button',{name:'Tutti'}));
   await screen.findByText('Mario Rossi');
   expect(screen.getByText('Anna Bianchi')).toBeTruthy();
+});
+
+
+it('shows imported bookings in full history as completed and paid without inventing payment movements',async()=>{
+  const imported={...booking,id:'legacy-booking',is_legacy:true,legacy_paid_in_full:true,legacy_code:'OLD100',
+    legacy_customer_id:'old-person',rental_kind:'legacy',status:'completed',total:'8',paid_amount:'8',balance:'0',
+    discount_percent:null,subtotal:null,discount_amount:null,customer_id:null,created_by:null};
+  const details={...imported,items:[{...detail.items[0],rental_inventory_id:null,is_legacy:true,amount:null,
+    legacy_reported_paid_amount:'8',legacy_returned_on:'2025-12-03'}],payments:[]};
+  mocks.get.mockImplementation((path:string)=>Promise.resolve(path.endsWith('/legacy-booking')?details:[imported]));
+  render(<RentalsPage view="history" rentalKind="all"/>);
+  await screen.findByText('Cod. OLD100');
+  expect(mocks.get).toHaveBeenCalledWith('/locations/site-a/rental-bookings?scope=all&include_legacy=true','token',expect.any(AbortSignal));
+  const table=screen.getByRole('region',{name:'Elenco noleggi della sede'});
+  expect(within(table).getByText('Concluso')).toBeTruthy();
+  expect(within(table).queryByRole('button',{name:/Registra pagamento/})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Apri noleggio 125'}));
+  await screen.findByRole('heading',{name:'Noleggio importato · OLD100'});
+  expect(within(screen.getByRole('dialog')).getByText(/Il CSV non specifica data e metodo/)).toBeTruthy();
+  expect(within(screen.getByRole('dialog')).getByText('03 dic 2025')).toBeTruthy();
+});
+
+
+it.each([
+  ['2026-12-01', '2026-12-01', '1 giorno'],
+  ['2026-12-01', '2026-12-03', '3 giorni'],
+  ['2026-03-28', '2026-03-30', '3 giorni'],
+  ['2026-12-31', '2027-01-01', '2 giorni'],
+])('counts inclusive rental days from %s to %s', (start, end, expected) => {
+  expect(historyDuration(start, end)).toBe(expected);
 });

@@ -24,6 +24,10 @@ class CustomerRead(BaseModel):
     is_legacy: bool = False
 
 
+class CustomerListRead(CustomerRead):
+    booking_count: int = 0
+
+
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 

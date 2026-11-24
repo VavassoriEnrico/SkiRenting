@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Response
 
 from app.api.routers.operator import CurrentUserId, SupabaseClient
-from app.schemas.customer import CustomerCreate, CustomerRead, CustomerUpdate
+from app.schemas.customer import CustomerCreate, CustomerListRead, CustomerRead, CustomerUpdate
 from app.services import customer_service
 from app.schemas.customer_bookings import CustomerBookingsRead
 from app.services.customer_booking_service import read_customer_bookings
@@ -11,7 +11,7 @@ from app.services.customer_booking_service import read_customer_bookings
 router = APIRouter(prefix='/customers', tags=['customers'])
 
 
-@router.get('', response_model=list[CustomerRead])
+@router.get('', response_model=list[CustomerListRead])
 def read_customers(user_id: CurrentUserId, client: SupabaseClient):
     return customer_service.list_customers(client, user_id)
 
