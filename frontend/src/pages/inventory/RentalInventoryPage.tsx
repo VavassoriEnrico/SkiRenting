@@ -1,4 +1,4 @@
-import { Boxes, CalendarDays, Eye, Wrench, Package, Plus, Search, X } from 'lucide-react';
+import { Boxes, CalendarDays, Eye, Archive, Wrench, Package, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
@@ -6,6 +6,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { apiGet } from '../../lib/api';
 import type { Location } from '../../lib/api';
 import { InventoryDetailsDialog } from './InventoryDetailsDialog';
+import { DeleteRentalItemsDialog } from './DeleteRentalItemsDialog';
 import { NewRentalItemDialog } from './NewRentalItemDialog';
 import { RentalInventoryRates } from './RentalInventoryRates';
 import { RentalUnitDialog } from './RentalUnitDialog';
@@ -27,6 +28,7 @@ function RentalInventoryContent({ token, locationId, locationName, locations }: 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<RentalRow | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<RentalItem[] | null>(null);
   const [success, setSuccess] = useState('');
   const [viewed, setViewed] = useState<RentalItem | null>(null);
   const destinations = locations.filter((entry) => entry.id !== locationId);
@@ -74,24 +76,24 @@ function RentalInventoryContent({ token, locationId, locationName, locations }: 
           <label className="period-select"><span className="sr-only">Gruppo noleggio</span><select value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Tutti i gruppi</option>{groups.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
           {(query || group) && <button type="button" className="reset-filters" onClick={resetFilters}><X size={14} aria-hidden="true" />Azzera filtri</button>}
         </div>
-        <div className="rentals-table-scroll" role="region" aria-label="Elenco materiale noleggio" tabIndex={0}><table className="rentals-table inventory-table"><caption className="sr-only">Quantità per variante e gruppo di noleggio</caption><thead><tr><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Gruppo</th><th scope="col">Misura / taglia</th><th scope="col">Anno</th><th scope="col" className="inventory-quantity">Quantità</th><th scope="col">Scheda</th></tr></thead><tbody>
-          {filtered.map((row) => <tr key={row.id} className="inventory-clickable-row" onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) setSelected(row); }}><td>{row.variant.brand}</td><th scope="row"><span className="rental-primary">{row.variant.model}</span></th><td>{row.group.name}</td><td>{sizeLabel(row.variant)}</td><td>{row.variant.year ?? '—'}</td><td className="inventory-quantity">{row.units.length}</td><td><button type="button" className="icon-button" aria-label={`Apri scheda ${row.variant.brand} ${row.variant.model} ${sizeLabel(row.variant)}`} aria-haspopup="dialog" onClick={() => setSelected(row)}><Eye size={17} aria-hidden="true" /></button></td></tr>)}
+        <div className="rentals-table-scroll" role="region" aria-label="Elenco materiale noleggio" tabIndex={0}><table className="rentals-table inventory-table"><caption className="sr-only">Quantità per variante e gruppo di noleggio</caption><thead><tr><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Gruppo</th><th scope="col">Misura / taglia</th><th scope="col">Anno</th><th scope="col" className="inventory-quantity">Quantità</th><th scope="col">Azioni</th></tr></thead><tbody>
+          {filtered.map((row) => <tr key={row.id} className="inventory-clickable-row" onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) setSelected(row); }}><td>{row.variant.brand}</td><th scope="row"><span className="rental-primary">{row.variant.model}</span></th><td>{row.group.name}</td><td>{sizeLabel(row.variant)}</td><td>{row.variant.year ?? '—'}</td><td className="inventory-quantity">{row.units.length}</td><td><div className="sales-row-actions"><button type="button" className="icon-button" aria-label={`Apri scheda ${row.variant.brand} ${row.variant.model} ${sizeLabel(row.variant)}`} aria-haspopup="dialog" onClick={() => setSelected(row)}><Eye size={17} aria-hidden="true" /></button><button type="button" className="icon-button customer-delete-button" disabled={row.units.every(unit => unit.is_generic)} aria-label={`Dismetti articoli ${row.variant.brand} ${row.variant.model} ${sizeLabel(row.variant)}`} title="Dismetti esemplari" onClick={() => { setSuccess(''); setDeleting(row.units); }}><Archive size={16} aria-hidden="true" /></button></div></td></tr>)}
           {filtered.length === 0 && <tr><td colSpan={7}><div className="rentals-empty"><Search size={25} aria-hidden="true" /><h3>Nessun articolo trovato</h3><p>Prova un altro filtro o seleziona un’altra categoria.</p></div></td></tr>}
         </tbody></table></div>
         <p className="rentals-panel-footer">Quantità raggruppate per modello, misura e gruppo. Apri la scheda per consultare esemplari, codici e tariffe del gruppo.</p>
       </section>
     </>}
     {creating && token && locationId && <NewRentalItemDialog token={token} locationId={locationId} locationName={locationName || ''} initialCategoryId={currentCategory?.id} onClose={() => setCreating(false)} onCreated={(item) => {
-      setCreating(false); setCategory(item.category_id); resetFilters(); setSuccess(`Articolo ${item.code} salvato nel magazzino di ${locationName}.`); setAttempt((value) => value + 1);
+      setCreating(false); setCategory(item.category_id); resetFilters(); setSuccess(item.created_count && item.created_count > 1 ? `${item.created_count} esemplari salvati nel magazzino di ${locationName}.` : `Articolo ${item.code} salvato nel magazzino di ${locationName}.`); setAttempt((value) => value + 1);
     }} />}
-    {selected && <InventoryDetailsDialog tariffSection={token && <RentalInventoryRates key={`${selected.group.id}:${token}`} token={token} groupId={selected.group.id} groupName={selected.group.name} />} busy={Boolean(viewed)} onClose={() => { setSelected(null); setViewed(null); }} details={{
+    {selected && <InventoryDetailsDialog tariffSection={token && <RentalInventoryRates key={`${selected.group.id}:${token}`} token={token} groupId={selected.group.id} groupName={selected.group.name} />} busy={Boolean(viewed || deleting)} onClose={() => { setSelected(null); setViewed(null); }} details={{
       demo: false, title: `${selected.variant.brand} ${selected.variant.model}`, category: selected.variant.category.name,
       warehouse: `Magazzino noleggio · ${locationName}`, fields: [
         ...variantFields(selected.variant), { label: 'Gruppo noleggio', value: selected.group.name },
         { label: 'Quantità', value: selected.units.length },
       ], codes: [], codesLabel: 'Esemplari e codici univoci', units: [...selected.units].sort((a, b) => a.code.localeCompare(b.code, 'it', { numeric: true })).map((unit) => ({
         code: unit.code,
-        action: <button className="sales-button inventory-transfer-button" type="button" aria-label={`Vedi ${unit.code}`} onClick={() => setViewed(unit)}>Vedi</button>,
+        action: <div className="sales-row-actions"><button className="sales-button inventory-transfer-button" type="button" aria-label={`Vedi ${unit.code}`} onClick={() => setViewed(unit)}>Vedi</button><button type="button" className="icon-button customer-delete-button" disabled={unit.is_generic} title="Dismetti esemplare" aria-label={`Dismetti esemplare ${unit.code}`} onClick={() => setDeleting([unit])}><Archive size={16} aria-hidden="true" /></button></div>,
       })),
     }}>
       {viewed && token && locationId && <RentalUnitDialog key={viewed.id} item={viewed} token={token} source={{ id: locationId, name: locationName || '' }} destinations={destinations} onClose={() => setViewed(null)} onTransferred={(result, targetName) => {
@@ -100,5 +102,19 @@ function RentalInventoryContent({ token, locationId, locationName, locations }: 
         setAttempt((value) => value + 1);
       }} />}
     </InventoryDetailsDialog>}
+    {deleting && token && locationId && <DeleteRentalItemsDialog items={deleting} token={token} locationId={locationId} locationName={locationName || ''} onClose={() => setDeleting(null)} onDeleted={ids => {
+      const removed = new Set(ids);
+      setData(current => {
+        if (!current) return current;
+        const removedInRepair = current.items.filter(item => removed.has(item.id) && (item.status === 'maintenance' || item.open_repair)).length;
+        return { ...current, items: current.items.filter(item => !removed.has(item.id)),
+          summary: current.summary ? { ...current.summary, currently_in_repair: Math.max(0, current.summary.currently_in_repair - removedInRepair) } : current.summary,
+        };
+      });
+      setSelected(current => current ? { ...current, units: current.units.filter(item => !removed.has(item.id)) } : null);
+      setViewed(current => current && removed.has(current.id) ? null : current);
+      setDeleting(null);
+      setSuccess(`${ids.length} ${ids.length === 1 ? 'esemplare dismesso' : 'esemplari dismessi'} dal magazzino di ${locationName}.`);
+    }} />}
   </div>;
 }

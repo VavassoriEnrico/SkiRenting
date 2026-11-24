@@ -4,7 +4,7 @@ import type { RentalCategory, RentalInventory, RentalItem, RentalVariant } from 
 
 export type GeneralItem = RentalItem & { location:Location; is_currently_rented?:boolean };
 export type GeneralInventory = { summary?:RentalInventory['summary']; categories:RentalCategory[]; locations:Location[]; items:GeneralItem[] };
-export type SaleStock = { id:string; variant:RentalVariant; location:Location; quantity:number; price:number|null; notes:string|null };
+export type SaleStock = { id:string; variant:RentalVariant & { sale_details?: { category_label:string|null }|null }; location:Location; quantity:number; price:number|null; notes:string|null };
 export type GeneralSaleInventory = { categories:RentalCategory[]; locations:Location[]; items:SaleStock[] };
 export type GeneralRow = { id:string; variant:RentalVariant; units:GeneralItem[]; stocks?:SaleStock[] };
 const text = (value?:string|null) => value?.trim().toLocaleLowerCase('it-IT') || null;
@@ -72,7 +72,7 @@ export function sortGeneralRows(rows: GeneralRow[], field: GeneralSortField, dir
 export function groupSaleStock(items:SaleStock[]):GeneralRow[] {
   const rows=new Map<string,GeneralRow>();
   for(const stock of items){
-    const id=variantKey(stock.variant);
+    const id=JSON.stringify([variantKey(stock.variant),text(stock.variant.sale_details?.category_label)]);
     if(!rows.has(id))rows.set(id,{id,variant:stock.variant,units:[],stocks:[]});
     rows.get(id)!.stocks!.push(stock);
   }

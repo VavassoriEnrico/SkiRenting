@@ -130,15 +130,13 @@ class NewVariant(CreateModel):
     details: NewDetails
 
 
-class RentalItemCreate(CreateModel):
+class RentalMaterialCreate(CreateModel):
     category_id: UUID | None = None
     new_category: NewCategory | None = None
     group_id: UUID | None = None
     new_group: Text | None = None
     variant_id: UUID | None = None
     new_variant: NewVariant | None = None
-    code: Text
-    serial_number: Text | None = None
     status: Literal['active', 'maintenance', 'retired', 'sold', 'lost'] = 'active'
     is_rentable: bool = True
     is_bookable: bool = True
@@ -157,6 +155,27 @@ class RentalItemCreate(CreateModel):
                 raise ValueError('Scegli una voce esistente oppure compilane una nuova.')
         if self.new_category and (self.group_id or self.variant_id):
             raise ValueError('Una nuova categoria richiede un nuovo gruppo e modello.')
+        return self
+
+
+class RentalItemCreate(RentalMaterialCreate):
+    code: Text
+    serial_number: Text | None = None
+
+
+class RentalArrivalUnit(CreateModel):
+    code: Text
+    serial_number: Text | None = None
+
+
+class RentalArrivalCreate(RentalMaterialCreate):
+    request_id: UUID
+    units: list[RentalArrivalUnit] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode='after')
+    def unique_codes(self):
+        if len({unit.code.casefold() for unit in self.units}) != len(self.units):
+            raise ValueError('Ogni esemplare deve avere un codice diverso.')
         return self
 
 
@@ -180,3 +199,29 @@ class RentalItemCreated(BaseModel):
     group_id: UUID
     variant_id: UUID
     code: str
+
+
+class RentalItemsArchive(CreateModel):
+    item_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+class RentalItemsArchived(BaseModel):
+    item_ids: list[UUID]
+
+
+class RentalArrivalRead(BaseModel):
+    id: UUID
+    quantity: int
+    items: list[RentalItemCreated] = Field(min_length=1)
+
+
+class RetiredRentalItemRead(RentalItemRead):
+    location: LocationRead
+    deleted_at: datetime | None = None
+    deleted_by: UUID | None = None
+
+
+class RetiredRentalInventoryRead(BaseModel):
+    categories: list[CategoryRead]
+    locations: list[LocationRead]
+    items: list[RetiredRentalItemRead]

@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.routers.operator import CurrentUserId, SupabaseClient
-from app.schemas.rental_inventory import GeneralRentalInventoryRead
-from app.services.rental_inventory_service import get_general_inventory
+from app.schemas.rental_inventory import GeneralRentalInventoryRead, RetiredRentalInventoryRead
+from app.services.rental_inventory_service import get_general_inventory, get_retired_inventory
 
 from app.schemas.sale_inventory import GeneralSaleInventoryRead
 from app.services.sale_inventory_service import get_general_sale_inventory
@@ -18,3 +18,8 @@ def general_inventory(user_id:CurrentUserId,client:SupabaseClient):
 @router.get('/sale-inventory', response_model=GeneralSaleInventoryRead, tags=['sale-inventory'])
 def general_sale_inventory(user_id: CurrentUserId, client: SupabaseClient):
     return get_general_sale_inventory(client, user_id)
+
+
+@router.get('/retired-rental-inventory', response_model=RetiredRentalInventoryRead)
+def retired_rental_inventory(user_id: CurrentUserId, client: SupabaseClient):
+    return get_retired_inventory(client, user_id)

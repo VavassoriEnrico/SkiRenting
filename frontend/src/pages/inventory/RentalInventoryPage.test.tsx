@@ -215,3 +215,87 @@ it('does not display fake zero counts on errors and retries the selected unit', 
   await details.findByText('Nessuna riparazione precedente');
   expect(details.getByText('Numero di noleggi').nextElementSibling?.textContent).toBe('0');
 });
+
+it('selects individual codes from the row basket and updates the remaining quantity without refetching', async () => {
+  let removed: string[] = [];
+  mocks.apiGet.mockImplementation(() => Promise.resolve({ ...inventory, items: inventory.items.filter(entry => !removed.includes(entry.id)) }));
+  mocks.apiPost.mockImplementation((_path: string, _token: string, body: { item_ids: string[] }) => {
+    removed = body.item_ids; return Promise.resolve(body);
+  });
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.click(screen.getByRole('button', { name: 'Dismetti articoli BLIZZARD ANOMALY 164 cm' }));
+  const dialog = screen.getByRole('dialog', { name: 'Dismetti esemplari' });
+  expect(mocks.apiPost).not.toHaveBeenCalled();
+  expect(within(dialog).getAllByRole('checkbox')).toHaveLength(2);
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: /002/ }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Dismetti 1 esemplare' }));
+  await screen.findByText('1 esemplare dismesso dal magazzino di Madesimo.');
+  expect(mocks.apiPost).toHaveBeenCalledWith('/locations/site-a/rental-inventory/archive', 'token', { item_ids: ['unit-1'] }, expect.any(AbortSignal));
+  await screen.findByText('1 variante · 1 articolo');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(mocks.apiGet.mock.calls.filter(([path]) => path === '/locations/site-a/rental-inventory')).toHaveLength(1);
+});
+
+it('opens single-code deletion without deleting sibling units or closing the material on cancel', async () => {
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Dismetti esemplare +001' }));
+  const confirmation = screen.getByRole('dialog', { name: 'Dismetti esemplari' });
+  expect(within(confirmation).getAllByRole('checkbox')).toHaveLength(1);
+  expect(within(confirmation).getByRole('checkbox', { name: /\+001/ })).toBeTruthy();
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Annulla' }));
+  expect(mocks.apiPost).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Vedi 002' })).toBeTruthy();
+});
+
+it('keeps the warehouse and confirmation intact when a rental or repair blocks deletion', async () => {
+  mocks.apiPost.mockRejectedValue(new Error('Esemplare ancora da riconsegnare.'));
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.click(screen.getByRole('button', { name: 'Dismetti articoli BLIZZARD ANOMALY 164 cm' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Dismetti 2 esemplari' }));
+  await screen.findByRole('alert');
+  expect(screen.getByText('1 variante · 2 articoli')).toBeTruthy();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('does not allow the shared generic poles to be removed', async () => {
+  mocks.apiGet.mockResolvedValue({ categories: [category], items: [{ ...item, is_generic: true, code: '1' }] });
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  expect((screen.getByRole('button', { name: 'Dismetti articoli BLIZZARD ANOMALY 164 cm' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+it('keeps the same material dialog, filters and tariff section open after deleting single codes', async () => {
+  mocks.apiGet.mockImplementation((path: string) => path.includes('/rental-rates') ? Promise.resolve({ rates: [] }) : Promise.resolve({ ...inventory, summary: { currently_rented: 0, currently_in_repair: 1 } }));
+  mocks.apiPost.mockImplementation((_path: string, _token: string, body: { item_ids: string[] }) => Promise.resolve(body));
+  render(<RentalInventoryPage />);
+  await screen.findByText('ANOMALY');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ANOMALY' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apri scheda BLIZZARD ANOMALY 164 cm' }));
+  const materialDialog = screen.getByRole('dialog', { name: 'BLIZZARD ANOMALY' });
+  const tariff = within(materialDialog).getByText('Tariffa').closest('details')!;
+  fireEvent.click(within(materialDialog).getByText('Tariffa'));
+  expect(tariff.open).toBe(true);
+  fireEvent.click(within(materialDialog).getByRole('button', { name: 'Dismetti esemplare +001' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Dismetti esemplari' })).getByRole('button', { name: 'Dismetti 1 esemplare' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Dismetti esemplari' })).toBeNull());
+  expect(screen.getByRole('dialog', { name: 'BLIZZARD ANOMALY' })).toBe(materialDialog);
+  expect(tariff.open).toBe(true);
+  expect(within(materialDialog).queryByText('+001')).toBeNull();
+  expect(within(materialDialog).getByRole('button', { name: 'Vedi 002' })).toBeTruthy();
+  expect(within(materialDialog).getByText('Quantità').nextElementSibling?.textContent).toBe('1');
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('ANOMALY');
+  expect(mocks.apiGet.mock.calls.filter(([path]) => path === '/locations/site-a/rental-inventory')).toHaveLength(1);
+  fireEvent.click(within(materialDialog).getByRole('button', { name: 'Dismetti esemplare 002' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Dismetti esemplari' })).getByRole('button', { name: 'Dismetti 1 esemplare' }));
+  await within(materialDialog).findByText('Nessun esemplare presente nel magazzino.');
+  expect(screen.getByRole('dialog', { name: 'BLIZZARD ANOMALY' })).toBe(materialDialog);
+  expect(within(materialDialog).getByText('Quantità').nextElementSibling?.textContent).toBe('0');
+  expect(tariff.open).toBe(true);
+  const repairs = screen.getByText('Attualmente in riparazione').closest('article')!;
+  expect(within(repairs).getByText('0')).toBeTruthy();
+});

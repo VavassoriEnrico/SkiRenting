@@ -10,6 +10,10 @@ from app.schemas.rental_inventory import (
     RentalInventoryRead,
     RentalItemCreate,
     RentalItemCreated,
+    RentalItemsArchive,
+    RentalItemsArchived,
+    RentalArrivalCreate,
+    RentalArrivalRead,
 )
 from app.services import rental_inventory_service
 from app.schemas.rental_item_details import RentalItemDetailsRead
@@ -51,3 +55,18 @@ def transfer_item(
 @router.get('/{location_id}/rental-inventory/{item_id}', response_model=RentalItemDetailsRead)
 def read_item_details(location_id: UUID, item_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
     return get_item_details(client, user_id, location_id, item_id)
+
+
+@router.post('/{location_id}/rental-inventory/archive', response_model=RentalItemsArchived)
+def archive_items(location_id: UUID, data: RentalItemsArchive, user_id: CurrentUserId, client: SupabaseClient):
+    return rental_inventory_service.archive_items(client, user_id, location_id, data.item_ids)
+
+
+@router.post('/{location_id}/rental-arrivals', response_model=RentalArrivalRead, status_code=201)
+def register_arrival(location_id: UUID, data: RentalArrivalCreate, user_id: CurrentUserId, client: SupabaseClient):
+    return rental_inventory_service.register_arrival(client, user_id, location_id, data)
+
+
+@router.get('/{location_id}/retired-rental-inventory/{item_id}', response_model=RentalItemDetailsRead)
+def read_retired_item_details(location_id: UUID, item_id: UUID, user_id: CurrentUserId, client: SupabaseClient):
+    return get_item_details(client, user_id, location_id, item_id, retired_only=True)

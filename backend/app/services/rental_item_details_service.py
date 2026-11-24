@@ -10,11 +10,11 @@ from app.repositories.rental_inventory_repository import read_all
 from app.services.operator_service import get_authorized_location
 
 
-def get_item_details(client: httpx.Client, user_id: UUID, location_id: UUID, item_id: UUID):
+def get_item_details(client: httpx.Client, user_id: UUID, location_id: UUID, item_id: UUID, retired_only=False):
     get_authorized_location(client, user_id, location_id)
     now = datetime.now(ZoneInfo('Europe/Rome'))
     try:
-        item = get_item(client, location_id, item_id)
+        item = get_item(client, location_id, item_id, retired_only=retired_only)
         if item is None:
             raise HTTPException(404, 'Articolo non trovato nella sede selezionata. Aggiorna il magazzino.')
         # No filtro sulla sede storica: l'esemplare conserva i noleggi visibili

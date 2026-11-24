@@ -40,7 +40,7 @@ def list_categories(client: httpx.Client) -> list[dict]:
 
 def list_items(client: httpx.Client, location_id: UUID) -> list[dict]:
     return read_all(client, "rental_inventory", {
-        "select": ITEM_SELECT, "location_id": f"eq.{location_id}", "order": "id",
+        "select": ITEM_SELECT, "location_id": f"eq.{location_id}", "deleted_at": "is.null", "status": "neq.retired", "order": "id",
     })
 
 
@@ -98,7 +98,7 @@ def unavailable_item_ids(client: httpx.Client, items: list[dict], starts_on: dat
 
 def list_generic_items(client: httpx.Client) -> list[dict]:
     return read_all(client, 'rental_inventory', {
-        'select': ITEM_SELECT, 'is_generic': 'eq.true', 'order': 'id',
+        'select': ITEM_SELECT, 'is_generic': 'eq.true', 'deleted_at': 'is.null', 'status': 'neq.retired', 'order': 'id',
     })
 
 
@@ -108,6 +108,37 @@ def list_items_for_locations(client: httpx.Client, location_ids: list[str]) -> l
         identifiers = ','.join(location_ids[start:start+100])
         items.extend(read_all(client,'rental_inventory',{
             'select': f'{ITEM_SELECT},location:locations(id,name)',
-            'location_id': f'in.({identifiers})', 'order': 'id',
+            'location_id': f'in.({identifiers})', 'deleted_at': 'is.null', 'status': 'neq.retired', 'order': 'id',
+        }))
+    return items
+
+
+def archive_items(client: httpx.Client, location_id: UUID, item_ids: list[UUID]) -> dict:
+    response = client.post('/rest/v1/rpc/skirenting_archive_rental_items', json={
+        'p_location_id': str(location_id), 'p_item_ids': [str(item_id) for item_id in item_ids],
+    })
+    response.raise_for_status()
+    return response.json()
+
+
+def register_arrival(client: httpx.Client, location_id: UUID, data: dict) -> dict:
+    shared = dict(data)
+    request_id = shared.pop('request_id')
+    units = shared.pop('units')
+    response = client.post('/rest/v1/rpc/skirenting_register_rental_arrival', json={
+        'p_location_id': str(location_id), 'p_request_id': request_id, 'p_data': shared, 'p_units': units,
+    })
+    response.raise_for_status()
+    return response.json()
+
+
+def list_retired_items(client: httpx.Client, location_ids: list[str]) -> list[dict]:
+    items = []
+    for start in range(0, len(location_ids), 100):
+        identifiers = ','.join(location_ids[start:start + 100])
+        items.extend(read_all(client, 'rental_inventory', {
+            'select': f'{ITEM_SELECT},deleted_at,deleted_by,location:locations(id,name)',
+            'location_id': f'in.({identifiers})', 'or': '(deleted_at.not.is.null,status.eq.retired)',
+            'order': 'id',
         }))
     return items

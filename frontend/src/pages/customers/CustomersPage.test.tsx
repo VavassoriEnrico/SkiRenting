@@ -260,3 +260,50 @@ describe('Clienti', () => {
     expect(screen.getByText('Accedi per visualizzare i clienti.')).toBeTruthy();
   });
 });
+
+it('sorts booking counts numerically in both directions and keeps missing values last', async () => {
+  mocks.apiGet.mockResolvedValue([
+    { ...customers[0], id: 'ten', first_name: 'Dieci', booking_count: 10 },
+    { ...customers[0], id: 'two', first_name: 'Due', booking_count: 2 },
+    { ...customers[0], id: 'zero', first_name: 'Zero', booking_count: 0 },
+    { ...customers[0], id: 'missing', first_name: 'Sconosciuto', booking_count: undefined },
+  ]);
+  render(<CustomersPage />);
+  await screen.findByText('Dieci');
+  const names = () => within(screen.getByRole('table')).getAllByRole('rowheader').map(cell => cell.textContent);
+  fireEvent.change(screen.getByLabelText('Ordina per'), { target: { value: 'booking_count' } });
+  expect(names()).toEqual(['Zero', 'Due', 'Dieci', 'Sconosciuto']);
+  fireEvent.change(screen.getByLabelText('Direzione ordinamento'), { target: { value: 'desc' } });
+  expect(names()).toEqual(['Dieci', 'Due', 'Zero', 'Sconosciuto']);
+});
+
+it('sorts by age from youngest to oldest and back without moving unknown dates to the top', async () => {
+  mocks.apiGet.mockResolvedValue([
+    { ...customers[0], id: 'older', first_name: 'Maggiore', birth_date: '1990-01-01' },
+    { ...customers[0], id: 'younger', first_name: 'Minore', birth_date: '2010-12-31' },
+    { ...customers[0], id: 'unknown', first_name: 'Non indicato', birth_date: null },
+  ]);
+  render(<CustomersPage />);
+  await screen.findByText('Maggiore');
+  const names = () => within(screen.getByRole('table')).getAllByRole('rowheader').map(cell => cell.textContent);
+  fireEvent.change(screen.getByLabelText('Ordina per'), { target: { value: 'age' } });
+  expect(names()).toEqual(['Minore', 'Maggiore', 'Non indicato']);
+  fireEvent.change(screen.getByLabelText('Direzione ordinamento'), { target: { value: 'desc' } });
+  expect(names()).toEqual(['Maggiore', 'Minore', 'Non indicato']);
+});
+
+it('sorts the entire customer list before pagination and returns to the first page on changes', async () => {
+  mocks.apiGet.mockResolvedValue(Array.from({ length: 51 }, (_, index) => ({ ...customers[0], id: String(index), first_name: `Cliente ${index}`, last_name: 'Test', phone: null, booking_count: index })));
+  render(<CustomersPage />);
+  await screen.findByText('Cliente 0');
+  fireEvent.click(screen.getByRole('button', { name: 'Successivi' }));
+  expect(screen.getByText('Cliente 50')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Ordina per'), { target: { value: 'booking_count' } });
+  expect(screen.getByText('Cliente 0')).toBeTruthy();
+  expect(screen.queryByText('Cliente 50')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Direzione ordinamento'), { target: { value: 'desc' } });
+  expect(within(screen.getByRole('table')).getAllByRole('rowheader')[0].textContent).toBe('Cliente 50');
+  expect((screen.getByRole('button', { name: 'Precedenti' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Cliente 1' } });
+  expect(within(screen.getByRole('table')).getAllByRole('rowheader')[0].textContent).toBe('Cliente 41');
+});

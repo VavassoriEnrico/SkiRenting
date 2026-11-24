@@ -66,7 +66,10 @@ def confirmation_database():
                              '027_daily_pack_rates.sql', '027_daily_pack_rates.sql',
                              '028_apply_daily_packs.sql', '028_apply_daily_packs.sql',
                              '029_delete_rental_bookings.sql', '029_delete_rental_bookings.sql',
-                             '030_import_legacy_rentals.sql', '030_import_legacy_rentals.sql']:
+                             '030_import_legacy_rentals.sql', '030_import_legacy_rentals.sql',
+                             '031_sale_stock_arrivals.sql', '031_sale_stock_arrivals.sql',
+                             '032_archive_rental_inventory.sql', '032_archive_rental_inventory.sql',
+                             '033_rental_stock_arrivals.sql', '033_rental_stock_arrivals.sql']:
                     conn.execute((folder / file).read_text(), prepare=False)
                 conn.execute("insert into customers(id,first_name,last_name) values(%s,'Mario','Rossi')", (USER_A,))
                 group = str(conn.execute("select id from material_groups where name='ALLMOUNTAIN'").fetchone()[0])
@@ -1147,3 +1150,251 @@ def test_legacy_import_uses_existing_tables_and_preserves_new_booking_requiremen
     conn.execute('reset role')
     with pytest.raises(psycopg.errors.CheckViolation),conn.transaction():
         conn.execute("insert into rental_booking_items(booking_id,rental_inventory_id,code_snapshot,brand_snapshot,model_snapshot,amount) values(%s,%s,'SECOND','Marca','Modello',null)",(normal['id'],ids[1]))
+
+
+def sale_arrival(conn, body, request_id=None, site=SITE_A):
+    return conn.execute('select skirenting_register_sale_arrival(%s,%s,%s)',
+                        (site, request_id or str(uuid4()), Jsonb(body))).fetchone()[0]
+
+
+def sale_payload(conn, code='ski', details=None, **changes):
+    category = str(conn.execute('select id from material_categories where code=%s', (code,)).fetchone()[0])
+    return {'category_id': category, 'quantity': 4, 'price': '199.90', 'purchase_price': '100.00',
+            'received_on': '2026-11-24', 'notes': 'Ordine di prova',
+            'new_variant': {'brand': 'Marca vendita', 'model': 'Modello vendita', 'year': 2026,
+                            'category_label': 'Base', 'details': {'length_cm': 170} if details is None else details}, **changes}
+
+
+def test_sale_arrival_adds_stock_once_and_preserves_rental_inventory(setup):
+    conn, *_ = setup
+    rental_count = conn.execute('select count(*) from rental_inventory').fetchone()[0]
+    body = sale_payload(conn)
+    request_id = str(uuid4())
+    first = sale_arrival(conn, body, request_id)
+    assert first['quantity'] == 4 and first['quantity_added'] == 4
+    assert sale_arrival(conn, body, request_id) == first
+    assert conn.execute('select count(*) from sale_stock_arrivals where id=%s', (request_id,)).fetchone()[0] == 1
+    assert conn.execute('select quantity,price from sale_inventory where id=%s', (first['inventory_id'],)).fetchone() == (4, Decimal('199.90'))
+    second = sale_arrival(conn, {**body, 'quantity': 2, 'price': None})
+    assert second['inventory_id'] == first['inventory_id'] and second['quantity'] == 6
+    assert second['price'] == 199.90
+    existing = {key: value for key, value in body.items() if key != 'new_variant'}
+    third = sale_arrival(conn, {**existing, 'variant_id': first['variant_id'], 'quantity': 1, 'price': '0.00'})
+    assert third['quantity'] == 7 and third['price'] == 0
+    assert conn.execute('select count(*) from rental_inventory').fetchone()[0] == rental_count
+    assert conn.execute('select category_label from sale_variant_details where variant_id=%s', (first['variant_id'],)).fetchone()[0] == 'Base'
+
+
+def test_sale_arrival_separates_measure_category_and_site(setup):
+    conn, *_ = setup
+    body = sale_payload(conn)
+    first = sale_arrival(conn, body)
+    longer = sale_arrival(conn, {**body, 'new_variant': {**body['new_variant'], 'details': {'length_cm': 180}}})
+    premium = sale_arrival(conn, {**body, 'new_variant': {**body['new_variant'], 'category_label': 'Avanzato'}})
+    other_site = sale_arrival(conn, body, site=SITE_B)
+    assert len({first['variant_id'], longer['variant_id'], premium['variant_id']}) == 3
+    assert other_site['variant_id'] == first['variant_id'] and other_site['inventory_id'] != first['inventory_id']
+    assert other_site['quantity'] == first['quantity'] == 4
+
+
+@pytest.mark.parametrize('code,details', [
+    ('ski', {'length_cm': 170}), ('snowboard', {'length_cm': 155}),
+    ('ski_boots', {'size_label': '26.5'}), ('helmet', {'size_label': 'M'}),
+    ('poles', {'height_cm': 120}), ('goggles', {'lens': 'S2'}), ('snowshoes', {'size_label': 'M/L'}),
+])
+def test_sale_arrival_saves_type_specific_details(setup, code, details):
+    conn, *_ = setup
+    result = sale_arrival(conn, sale_payload(conn, code=code, details=details))
+    assert result['quantity'] == 4
+
+
+@pytest.mark.parametrize('changes', [
+    {'quantity': 0}, {'quantity': -1}, {'quantity': '1.5'}, {'quantity': 1000001},
+    {'price': '-0.01'}, {'price': '1.001'}, {'received_on': None},
+    {'new_variant': {'brand': 'Invalid', 'model': 'Wrong details', 'details': {'lens': 'S2'}}},
+])
+def test_sale_arrival_invalid_data_rolls_back_catalog_and_stock(setup, changes):
+    conn, *_ = setup
+    body = sale_payload(conn, **changes)
+    before = [conn.execute(f'select count(*) from {table}').fetchone()[0]
+              for table in ['material_variants', 'sale_inventory', 'sale_stock_arrivals']]
+    with pytest.raises(psycopg.Error):
+        with conn.transaction():
+            sale_arrival(conn, body)
+    after = [conn.execute(f'select count(*) from {table}').fetchone()[0]
+             for table in ['material_variants', 'sale_inventory', 'sale_stock_arrivals']]
+    assert before == after
+
+
+def test_sale_arrival_rejects_changed_retry_and_unauthorized_site(setup):
+    conn, *_ = setup
+    body = sale_payload(conn)
+    request_id = str(uuid4())
+    sale_arrival(conn, body, request_id)
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        with conn.transaction():
+            sale_arrival(conn, {**body, 'quantity': 10}, request_id)
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with conn.transaction():
+            sale_arrival(conn, body, site=SITE_B)
+    assert conn.execute('select count(*) from sale_stock_arrivals where location_id=%s', (SITE_B,)).fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with conn.transaction():
+            conn.execute('update sale_inventory set quantity=100')
+
+
+def test_sale_stock_archive_preserves_arrivals_and_next_arrival_starts_fresh(setup):
+    conn, *_ = setup
+    body = sale_payload(conn)
+    first = sale_arrival(conn, body)
+    archive = 'select skirenting_archive_sale_stock(%s,%s)'
+    assert str(conn.execute(archive, (SITE_A, first['inventory_id'])).fetchone()[0]) == first['inventory_id']
+    assert str(conn.execute(archive, (SITE_A, first['inventory_id'])).fetchone()[0]) == first['inventory_id']
+    assert conn.execute('select quantity,deleted_at is not null from sale_inventory where id=%s', (first['inventory_id'],)).fetchone() == (4, True)
+    assert conn.execute('select count(*) from sale_stock_arrivals where inventory_id=%s', (first['inventory_id'],)).fetchone()[0] == 1
+    restored = sale_arrival(conn, {**body, 'quantity': 2})
+    assert restored['quantity'] == 2 and restored['inventory_id'] == first['inventory_id']
+    assert conn.execute('select deleted_at,deleted_by from sale_inventory where id=%s', (first['inventory_id'],)).fetchone() == (None, None)
+    assert conn.execute('select count(*) from sale_stock_arrivals where inventory_id=%s', (first['inventory_id'],)).fetchone()[0] == 2
+
+
+def test_sale_stock_archive_cannot_touch_another_location(setup):
+    conn, *_ = setup
+    first = sale_arrival(conn, sale_payload(conn))
+    with pytest.raises(psycopg.errors.NoDataFound):
+        with conn.transaction():
+            conn.execute('select skirenting_archive_sale_stock(%s,%s)', (SITE_B, first['inventory_id']))
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with conn.transaction():
+            conn.execute('select skirenting_archive_sale_stock(%s,%s)', (SITE_B, first['inventory_id']))
+    assert conn.execute('select deleted_at from sale_inventory where id=%s', (first['inventory_id'],)).fetchone()[0] is None
+
+
+def archive_rental_items(conn, ids, site=SITE_A):
+    return conn.execute('select skirenting_archive_rental_items(%s,%s)', (site, ids)).fetchone()[0]
+
+
+def test_archive_rental_item_is_idempotent_and_keeps_its_code(setup):
+    conn, ids, *_ = setup
+    result = archive_rental_items(conn, [ids[0]])
+    assert result == {'item_ids': [ids[0]]}
+    assert archive_rental_items(conn, [ids[0]]) == result
+    assert conn.execute('select code,status,is_rentable,is_bookable,deleted_at is not null from rental_inventory where id=%s', (ids[0],)).fetchone() == ('+001', 'retired', False, False, True)
+    with pytest.raises(psycopg.Error), conn.transaction():
+        confirm(conn, payload(ids))
+    assert conn.execute('select count(*) from rental_bookings').fetchone()[0] == 0
+
+
+def test_archive_rental_items_rejects_whole_batch_if_one_is_booked(setup):
+    conn, ids, *_ = setup
+    confirm(conn, payload(ids))
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState), conn.transaction():
+        archive_rental_items(conn, ids)
+    assert conn.execute('select count(*) from rental_inventory where id=any(%s::uuid[]) and deleted_at is not null', (ids,)).fetchone()[0] == 0
+
+
+def test_archive_rental_item_keeps_completed_rental_and_repair_history(setup):
+    conn, ids, *_ = setup
+    repair = send_for_repair(conn)
+    finish_repair(conn, repair['id'], ids[0])
+    booking_id = str(uuid4())
+    confirm(conn, payload(ids), booking_id=booking_id)
+    conn.execute('reset role')
+    conn.execute('update rental_booking_items set returned_at=now() where rental_inventory_id=%s', (ids[0],))
+    conn.execute("update rental_bookings set status='completed' where id=%s", (booking_id,))
+    conn.execute('set local role authenticated')
+    archive_rental_items(conn, [ids[0]])
+    assert conn.execute('select count(*) from rental_booking_items where rental_inventory_id=%s', (ids[0],)).fetchone()[0] == 1
+    assert conn.execute('select status from material_repairs where id=%s', (repair['id'],)).fetchone()[0] == 'completed'
+    assert conn.execute('select count(*) from rental_bookings where id=%s', (booking_id,)).fetchone()[0] == 1
+
+
+def test_archive_rental_item_rejects_open_repair(setup):
+    conn, ids, *_ = setup
+    send_for_repair(conn)
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState), conn.transaction():
+        archive_rental_items(conn, [ids[0]])
+    assert conn.execute('select deleted_at from rental_inventory where id=%s', (ids[0],)).fetchone()[0] is None
+
+
+def test_archive_rental_item_rejects_generic_and_other_locations(setup):
+    conn, ids, *_ = setup
+    generic_id = conn.execute("select id from rental_inventory where code='1'").fetchone()[0]
+    with pytest.raises(psycopg.errors.InvalidParameterValue), conn.transaction():
+        archive_rental_items(conn, [str(generic_id)])
+    with pytest.raises(psycopg.errors.NoDataFound), conn.transaction():
+        archive_rental_items(conn, [ids[0]], SITE_B)
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        archive_rental_items(conn, [ids[0]], SITE_B)
+
+
+def rental_arrival(conn, shared, units, request_id=None, site=SITE_A):
+    return conn.execute('select skirenting_register_rental_arrival(%s,%s,%s,%s)',
+                        (site, request_id or str(uuid4()), Jsonb(shared), Jsonb(units))).fetchone()[0]
+
+
+def rental_arrival_data(conn):
+    category, group = conn.execute("select c.id,g.id from material_categories c join material_groups g on g.category_id=c.id where c.code='ski' and g.name='ALLMOUNTAIN'").fetchone()
+    return {'category_id': str(category), 'group_id': str(group),
+            'new_variant': {'brand': 'Marca arrivo', 'model': 'Modello arrivo', 'details': {'length_cm': 170}},
+            'purchase_price': 150.50, 'notes': 'Carico multiplo'}
+
+
+def test_rental_arrival_creates_ten_distinct_codes_with_one_variant_and_is_idempotent(setup):
+    conn, *_ = setup
+    shared = rental_arrival_data(conn)
+    units = [{'code': f'ARR{i:03}', 'serial_number': f'SN{i:03}'} for i in range(10)]
+    request_id = str(uuid4())
+    before = conn.execute('select count(*) from rental_inventory').fetchone()[0]
+    first = rental_arrival(conn, shared, units, request_id)
+    assert first['quantity'] == 10 and len(first['items']) == 10
+    assert len({row['variant_id'] for row in first['items']}) == 1
+    assert len({row['id'] for row in first['items']}) == len({row['code'] for row in first['items']}) == 10
+    assert rental_arrival(conn, shared, units, request_id) == first
+    assert conn.execute('select count(*) from rental_inventory').fetchone()[0] == before + 10
+    assert conn.execute('select quantity from rental_stock_arrivals where id=%s', (request_id,)).fetchone()[0] == 10
+    assert conn.execute("select serial_number,purchase_price from rental_inventory where code='ARR005'").fetchone() == ('SN005', Decimal('150.50'))
+
+
+def test_rental_arrival_creates_new_category_group_and_variant_once(setup):
+    conn, *_ = setup
+    shared = {'new_category': {'name': 'Categoria arrivo', 'code': 'arrival_snow', 'detail_type': 'snowboard'},
+              'new_group': 'Gruppo arrivo', 'new_variant': {'brand': 'Marca', 'model': 'Tavola', 'details': {'length_cm': 155}}}
+    result = rental_arrival(conn, shared, [{'code': 'NEW-SNOW-1'}, {'code': 'NEW-SNOW-2'}])
+    assert len({row['category_id'] for row in result['items']}) == len({row['group_id'] for row in result['items']}) == len({row['variant_id'] for row in result['items']}) == 1
+    assert conn.execute("select count(*) from material_categories where code='arrival_snow'").fetchone()[0] == 1
+
+
+def test_rental_arrival_rolls_back_earlier_codes_and_catalog_on_late_duplicate(setup):
+    conn, *_ = setup
+    shared = rental_arrival_data(conn)
+    before = conn.execute('select count(*) from material_variants').fetchone()[0]
+    with pytest.raises(psycopg.errors.UniqueViolation), conn.transaction():
+        rental_arrival(conn, shared, [{'code': 'NEW-BEFORE-DUPLICATE'}, {'code': '+001'}])
+    assert conn.execute('select count(*) from material_variants').fetchone()[0] == before
+    assert conn.execute("select count(*) from rental_inventory where code='NEW-BEFORE-DUPLICATE'").fetchone()[0] == 0
+    assert conn.execute('select count(*) from rental_stock_arrivals').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('units', [[], [{'code': ''}], [{'code': 'SAME'}, {'code': 'same'}]])
+def test_rental_arrival_rejects_missing_or_repeated_codes(setup, units):
+    conn, *_ = setup
+    with pytest.raises(psycopg.errors.InvalidParameterValue), conn.transaction():
+        rental_arrival(conn, rental_arrival_data(conn), units)
+
+
+def test_rental_arrival_checks_membership_and_changed_retry(setup):
+    conn, *_ = setup
+    shared = rental_arrival_data(conn)
+    units = [{'code': 'RETRY-1'}, {'code': 'RETRY-2'}]
+    request_id = str(uuid4())
+    rental_arrival(conn, shared, units, request_id)
+    with pytest.raises(psycopg.errors.UniqueViolation), conn.transaction():
+        rental_arrival(conn, shared, [{'code': 'OTHER-1'}, {'code': 'OTHER-2'}], request_id)
+    conn.execute("select set_config('request.jwt.claim.sub',%s,true)", (USER_B,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+        rental_arrival(conn, shared, units, site=SITE_B)
+    assert conn.execute('select count(*) from rental_stock_arrivals where location_id=%s', (SITE_B,)).fetchone()[0] == 0

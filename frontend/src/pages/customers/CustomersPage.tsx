@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { apiGet } from '../../lib/api';
-import { normalizeCustomerText as normalize, customerBirthDate } from './customer';
+import { normalizeCustomerText as normalize, customerBirthDate, customerSortOptions, sortCustomers } from './customer';
 import { CustomerBookingsDialog } from './CustomerBookingsDialog';
 import { CustomerDialog } from './CustomerDialog';
-import type { Customer } from './customer';
+import type { Customer, CustomerSortField, CustomerSortDirection } from './customer';
 
 function matches(customer: Customer, query: string) {
   const text = normalize([
@@ -30,6 +30,8 @@ export function CustomersPage() {
 function CustomersList({ token }: { token: string }) {
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [query, setQuery] = useState('');
+  const [sortField, setSortField] = useState<CustomerSortField>('last_name');
+  const [sortDirection, setSortDirection] = useState<CustomerSortDirection>('asc');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [page, setPage] = useState(0);
@@ -51,7 +53,7 @@ function CustomersList({ token }: { token: string }) {
     return () => controller.abort();
   }, [token, attempt]);
 
-  const filtered = customers?.filter((customer) => matches(customer, query)) || [];
+  const filtered = sortCustomers(customers?.filter((customer) => matches(customer, query)) || [], sortField, sortDirection);
 
   const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 50) - 1));
   const visible = filtered.slice(currentPage * 50, (currentPage + 1) * 50);
@@ -80,6 +82,8 @@ function CustomersList({ token }: { token: string }) {
             <label className="sr-only" htmlFor="customer-search">Cerca per nome, cognome, email o telefono</label>
             <input id="customer-search" type="search" placeholder="Cerca nome, cognome, email o telefono…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
           </div>
+          <label className="general-inventory-sort"><span>Ordina per</span><select value={sortField} onChange={event => { setSortField(event.target.value as CustomerSortField); setPage(0); }}>{Object.entries(customerSortOptions).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="period-select"><span className="sr-only">Direzione ordinamento</span><select value={sortDirection} onChange={event => { setSortDirection(event.target.value as CustomerSortDirection); setPage(0); }}><option value="asc">Crescente ↑</option><option value="desc">Decrescente ↓</option></select></label>
           {query && <button className="reset-filters" type="button" onClick={() => { setQuery(''); setPage(0); }}><X size={14} aria-hidden="true" />Azzera ricerca</button>}
         </div>
 

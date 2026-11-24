@@ -1,64 +1,27 @@
-import type { ReactNode } from 'react';
-import { Eye } from 'lucide-react';
-
-import { categories } from './demo-data';
-import type { Category } from './demo-data';
+import { Eye, Trash2 } from 'lucide-react';
+import { salePrice } from './general-inventory';
+import { measure, sizeLabel } from './rental-inventory';
 import type { SaleInventoryItem } from './sale-inventory';
 
-type Column = { key: string; label: string; render: (item: SaleInventoryItem) => ReactNode; className?: string };
-const number = new Intl.NumberFormat('it-IT');
-const currency = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const brand: Column = { key: 'brand', label: 'Marca', render: (item) => item.brand };
-const model: Column = { key: 'model', label: 'Modello', render: (item) => item.model };
-const type: Column = { key: 'type', label: 'Tipo', render: (item) => item.type ?? '—' };
-const length: Column = { key: 'length', label: 'Lunghezza', render: (item) => item.lengthCm == null ? '—' : `${number.format(item.lengthCm)} cm` };
-
-export const saleCategoryColumns: Record<Category | 'all', Column[]> = {
-  all: [{ key: 'category', label: 'Tipo', render: (item) => categories.find((entry) => entry.id === item.category)!.label }, brand, model],
-  ski: [brand, model, type, length],
-  snowboard: [brand, model, type, length],
-  boots: [brand, model, { key: 'size', label: 'Misura originale', render: (item) => item.size ?? '—' }],
-  poles: [brand, model, { key: 'height', label: 'Altezza', render: (item) => item.heightCm == null ? '—' : `${number.format(item.heightCm)} cm` }],
-  helmet: [
-    brand, model,
-    { key: 'size', label: 'Taglia', render: (item) => item.size ?? '—' },
-  ],
-  goggles: [brand, model, { key: 'lens', label: 'Lente', render: (item) => item.lens ?? '—' }],
-  avalanche: [brand, model],
-  snowshoes: [brand, model, { key: 'size', label: 'Taglia', render: (item) => item.size ?? '—' }],
-};
-
-export const saleDetailColumns = {
-  ...saleCategoryColumns,
-  ski: [brand, model, type, length],
-  snowboard: [brand, model, type, length],
-};
-
-export function SaleInventoryTable({ items, category, onReset, onSelect, isWarehouseEmpty = false }: {
-  isWarehouseEmpty?: boolean; items: SaleInventoryItem[]; category: Category | 'all'; onReset: () => void; onSelect: (item: SaleInventoryItem) => void;
+export function SaleInventoryTable({ items, categoryCode, onReset, onSelect, onDelete, isWarehouseEmpty = false }: {
+  isWarehouseEmpty?: boolean; items: SaleInventoryItem[]; categoryCode?: string; onReset: () => void; onSelect: (item: SaleInventoryItem) => void; onDelete: (item: SaleInventoryItem) => void;
 }) {
-  const columns = saleCategoryColumns[category];
-  return (
-    <div className="rentals-table-scroll" role="region" aria-label="Magazzino vendita, scorrimento orizzontale" tabIndex={0}>
-      <table className="rentals-table sale-inventory-table">
-        <caption className="sr-only">Magazzino vendita: righe per modello e caratteristiche. Prezzi unitari; codici dei singoli esemplari nella scheda di dettaglio.</caption>
-        <thead><tr>{columns.map((column) => <th scope="col" key={column.key}>{column.label}</th>)}<th scope="col" className="inventory-quantity">Quantità</th><th scope="col" className="rental-amount">Prezzo</th><th scope="col">Scheda</th></tr></thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id} className="inventory-clickable-row" onClick={(event) => {
-              if (!(event.target as HTMLElement).closest('button, a')) onSelect(item);
-            }}>
-              {columns.map((column, index) => index === 0
-                ? <th key={column.key} scope="row"><span className="rental-primary">{column.render(item)}</span></th>
-                : <td key={column.key}><span className="rental-primary">{column.render(item)}</span></td>)}
-              <td className="inventory-quantity">{item.unitCodes.length}</td>
-              <td className="rental-amount">{currency.format(item.priceCents / 100)}</td>
-              <td><button type="button" className="icon-button" title="Apri scheda materiale" aria-label={`Apri scheda ${item.brand} ${item.model}`} aria-haspopup="dialog" onClick={() => onSelect(item)}><Eye size={17} aria-hidden="true" /></button></td>
-            </tr>
-          ))}
-          {!items.length && <tr><td colSpan={columns.length + 3}><div className="rentals-empty"><h3>{isWarehouseEmpty ? 'Nessun articolo nel magazzino vendita' : 'Nessun articolo trovato'}</h3>{!isWarehouseEmpty && <><p>Prova un altro termine o seleziona una categoria diversa.</p><button type="button" onClick={onReset}>Azzera filtri</button></>}</div></td></tr>}
-        </tbody>
-      </table>
-    </div>
-  );
+  const isLength = categoryCode === 'ski' || categoryCode === 'snowboard';
+  const isPoles = categoryCode === 'poles';
+  const isGoggles = categoryCode === 'goggles';
+  const hasSize = isLength || isPoles || !['avalanche', 'goggles'].includes(categoryCode || '');
+  const columns = 6 + (hasSize || isGoggles ? 1 : 0);
+  return <div className="rentals-table-scroll" role="region" aria-label="Magazzino vendita, scorrimento orizzontale" tabIndex={0}>
+    <table className="rentals-table sale-inventory-table">
+      <caption className="sr-only">Magazzino vendita: quantità per modello, misura e categoria. Prezzi unitari.</caption>
+      <thead><tr><th scope="col">Marca</th><th scope="col">Modello</th><th scope="col">Categoria</th>{(hasSize || isGoggles) && <th scope="col">{isLength ? 'Lunghezza' : isPoles ? 'Altezza' : isGoggles ? 'Lente' : 'Taglia / misura'}</th>}<th scope="col">Quantità</th><th scope="col">Prezzo</th><th scope="col">Azioni</th></tr></thead>
+      <tbody>{items.map(item => <tr key={item.id} className="inventory-clickable-row" onClick={event => { if (!(event.target as HTMLElement).closest('button,a')) onSelect(item); }}>
+        <th scope="row">{item.variant.brand}</th><td>{item.variant.model}</td><td>{item.variant.sale_details?.category_label || '—'}</td>
+        {(hasSize || isGoggles) && <td>{isGoggles ? item.variant.goggle_details?.lens || '—' : isPoles ? measure(item.variant.pole_details?.height_cm, 'cm') : sizeLabel(item.variant)}</td>}
+        <td>{item.quantity}</td><td className="rental-amount">{salePrice(item.price)}</td><td><div className="sales-row-actions"><button type="button" className="icon-button" title="Apri scheda materiale" aria-label={`Apri scheda ${item.variant.brand} ${item.variant.model}`} aria-haspopup="dialog" onClick={() => onSelect(item)}><Eye size={17} aria-hidden="true" /></button><button type="button" className="icon-button customer-delete-button" title="Elimina articolo" aria-label={`Elimina articolo ${item.variant.brand} ${item.variant.model}`} onClick={() => onDelete(item)}><Trash2 size={16} aria-hidden="true" /></button></div></td>
+      </tr>)}
+        {!items.length && <tr><td colSpan={columns}><div className="rentals-empty"><h3>{isWarehouseEmpty ? 'Nessun articolo nel magazzino vendita' : 'Nessun articolo trovato'}</h3>{!isWarehouseEmpty && <><p>Prova un altro termine o seleziona una categoria diversa.</p><button type="button" onClick={onReset}>Azzera filtri</button></>}</div></td></tr>}
+      </tbody>
+    </table>
+  </div>;
 }

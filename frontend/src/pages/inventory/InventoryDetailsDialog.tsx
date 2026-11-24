@@ -38,14 +38,15 @@ export function InventoryDetailsDialog({ details, onClose, children, tariffSecti
           </dl>
         </section>
         {tariffSection}
-        <section className="sale-detail-section" aria-labelledby="inventory-codes-title">
+        {details.codesLabel && <section className="sale-detail-section" aria-labelledby="inventory-codes-title">
           <h3 id="inventory-codes-title">{details.codesLabel}</h3>
+          {units.length === 0 && <p className="rental-form-hint">Nessun esemplare presente nel magazzino.</p>}
           <ul className="inventory-detail-codes">
             {units.map((unit) => (
               <li key={unit.code}><Package size={15} aria-hidden="true" /><span className="unit-code">{unit.code}</span>{unit.description && <span className="rental-unit-description">{unit.description}</span>}{unit.action}</li>
             ))}
           </ul>
-        </section>
+        </section>}
         {children}
       </div>
       <div className="sale-dialog-footer"><button className="sales-button" type="button" disabled={busy} onClick={onClose}>Chiudi</button></div>

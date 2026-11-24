@@ -56,7 +56,7 @@ function GeneralInventoryContent({token,mode}:{token:string;mode:'rental'|'sale'
   const totalQuantity=rows.reduce((total,row)=>total+rowQuantity(row),0);
   const terms=query.trim().toLocaleLowerCase('it-IT').split(/\s+/);
   const filtered=rows.filter(row=>{
-    const text=[row.variant.brand,row.variant.model,row.variant.year,sizeLabel(row.variant),row.variant.category.name,...row.units.flatMap(unit=>[unit.code,unit.location.name,unit.group.name]),...(row.stocks||[]).map(stock=>stock.location.name)].join(' ').toLocaleLowerCase('it-IT');
+    const text=[row.variant.brand,row.variant.model,row.variant.year,sizeLabel(row.variant),row.variant.category.name,...row.units.flatMap(unit=>[unit.code,unit.location.name,unit.group.name]),...(row.stocks||[]).flatMap(stock=>[stock.location.name,stock.variant.sale_details?.category_label])].join(' ').toLocaleLowerCase('it-IT');
     return (isSale?(!category||row.variant.category.id===category):row.variant.category.id===currentCategory?.id)&&terms.every(term=>text.includes(term));
   });
   const sorted=sortGeneralRows(filtered,sortField,sortDirection);

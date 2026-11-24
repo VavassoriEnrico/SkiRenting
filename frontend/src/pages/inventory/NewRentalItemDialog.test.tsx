@@ -119,3 +119,59 @@ describe('Nuovo articolo noleggio', () => {
     expect(callbacks.onCreated).not.toHaveBeenCalled();
   });
 });
+
+it('creates ten codes with one model and separate serial numbers in one request', async () => {
+  const callbacks = await open(); useExistingVariant();
+  change('Quantità in arrivo *', '10');
+  for (let index = 1; index <= 10; index++) change(`Codice esemplare ${index} *`, `ski${index}`);
+  change('Numero di serie 2 (S/N)', 'SERIAL-2');
+  const items = Array.from({ length: 10 }, (_, index) => ({ ...created, id: `item-${index}`, code: `SKI${index + 1}` }));
+  mocks.post.mockResolvedValue({ id: 'arrival', quantity: 10, items });
+  fireEvent.click(screen.getByRole('button', { name: 'Salva 10 articoli' }));
+  await waitFor(() => expect(callbacks.onCreated).toHaveBeenCalledWith({ ...items[0], created_count: 10 }));
+  const [path, token, body] = mocks.post.mock.calls[0];
+  expect(path).toBe('/locations/site-a/rental-arrivals');
+  expect(token).toBe('token');
+  expect(body.variant_id).toBe('variant-id');
+  expect(body.units).toHaveLength(10);
+  expect(body.units[0].code).toBe('SKI1');
+  expect(body.units[1].serial_number).toBe('SERIAL-2');
+  expect(body).not.toHaveProperty('code');
+  expect(body.request_id).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+it('rejects duplicate codes before saving and preserves the input for correction', async () => {
+  await open(); useExistingVariant();
+  change('Quantità in arrivo *', '2');
+  change('Codice esemplare 1 *', 'same'); change('Codice esemplare 2 *', 'SAME');
+  fireEvent.click(screen.getByRole('button', { name: 'Salva 2 articoli' }));
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect((screen.getByLabelText('Codice esemplare 1 *') as HTMLInputElement).value).toBe('SAME');
+});
+
+it('keeps all codes after an error and reuses the arrival id on an unchanged retry', async () => {
+  const callbacks = await open(); useExistingVariant();
+  change('Quantità in arrivo *', '2'); change('Codice esemplare 2 *', '+0002');
+  mocks.post.mockRejectedValueOnce(new Error('Connessione interrotta'));
+  fireEvent.click(screen.getByRole('button', { name: 'Salva 2 articoli' }));
+  await screen.findByRole('alert');
+  expect((screen.getByLabelText('Codice esemplare 1 *') as HTMLInputElement).value).toBe('+0001');
+  const items = [created, { ...created, id: 'second', code: '+0002' }];
+  mocks.post.mockResolvedValue({ id: 'arrival', quantity: 2, items });
+  fireEvent.click(screen.getByRole('button', { name: 'Salva 2 articoli' }));
+  await waitFor(() => expect(callbacks.onCreated).toHaveBeenCalled());
+  expect(mocks.post.mock.calls[0][2].request_id).toBe(mocks.post.mock.calls[1][2].request_id);
+});
+
+it('moves focus to the next code on Enter and keeps existing codes when quantity increases', async () => {
+  await open(); useExistingVariant();
+  change('Quantità in arrivo *', '2');
+  change('Codice esemplare 2 *', 'second');
+  fireEvent.keyDown(screen.getByLabelText('Codice esemplare 1 *'), { key: 'Enter' });
+  expect(document.activeElement).toBe(screen.getByLabelText('Codice esemplare 2 *'));
+  change('Quantità in arrivo *', '3');
+  expect((screen.getByLabelText('Codice esemplare 2 *') as HTMLInputElement).value).toBe('SECOND');
+  expect((screen.getByLabelText('Codice esemplare 3 *') as HTMLInputElement).value).toBe('');
+  expect(mocks.post).not.toHaveBeenCalled();
+});

@@ -27,12 +27,10 @@ Saldo parziale mantiene il giallo, saldo completo passa al verde. Modifica e
 annullamento restano da implementare. I rientri si registrano nella pagina dedicata.
 Non richiede nuove query SQL rispetto alle tabelle già predisposte.
 Magazzino noleggio (`/materiale-noleggio`) legge il materiale reale della sede attiva.
-Magazzino vendita (`/materiale-vendita`) mantiene categorie, colonne e struttura,
-ma il dataset locale in `src/pages/inventory/sale-inventory.ts` è vuoto: i dati di prova
-sono stati rimossi e il collegamento ai dati vendita resta da implementare.
-Le categorie vendita sono Sci, Snowboard, Scarponi, Bastoncini, Casco, Maschere,
-Kit ARTVA e Ciaspole. Le colonne dipendono dalla categoria e il dettaglio, quando
-saranno presenti articoli, mostra caratteristiche e codici degli esemplari.
+Magazzino vendite legge quantità e prezzi reali della sede selezionata e permette
+**Registra arrivo** dopo la migrazione 031. Le colonne e il form dipendono dal tipo
+di materiale; il dettaglio mostra caratteristiche e giacenza, senza codici dei
+singoli pezzi. Vedere la sezione Registrazione arrivi vendita in fondo.
 Entrambi i magazzini si aprono sulla categoria Sci, senza la vista Tutto il materiale.
 Vendite (`/vendite`) mantiene ricerca cliente e filtri per materiale, ma l'elenco
 è vuoto: i dati di prova sono stati rimossi. Il riepilogo PDF è disabilitato senza
@@ -446,3 +444,76 @@ Il dettaglio conserva le riconsegne note e gli importi originali, senza inventar
 metodi, date di pagamento o pack. Le anagrafiche ambigue sono segnalate, senza
 perdere le prenotazioni. Ricerca, filtri, ordine cronologico e cestino rimangono
 disponibili; il materiale vecchio non modifica le disponibilità attuali.
+
+## Registrazione arrivi vendita
+
+Il magazzino locale → Vendita è ora collegato alle giacenze reali della sede
+selezionata. **Registra arrivo** apre un modulo con le stesse sezioni viola del
+magazzino noleggio: tipo e categoria commerciale, modello e caratteristiche,
+arrivo e quantità, prezzi unitari e note. Le marche e i modelli già esistenti
+sono suggeriti; si possono scegliere varianti esistenti o registrarne di nuove.
+Sci e snowboard hanno lunghezza, scarponi la misura originale, caschi e ciaspole
+la taglia, bastoncini l'altezza e maschere la lente. I kit ARTVA non richiedono
+una misura. La fascia commerciale può essere scelta dai suggerimenti o scritta
+liberamente e non modifica i gruppi tariffari noleggio.
+
+Il carico incrementa la quantità della variante nella sede corrente. Un'altra
+misura rimane una riga distinta. Prezzo vendita vuoto = mantieni il prezzo
+esistente (o da definire per un nuovo articolo). Il prezzo di acquisto viene
+conservato nella registrazione dell'arrivo. Non vengono richiesti o generati
+codici per i singoli pezzi. Dopo il salvataggio si ricarica la giacenza reale;
+errori e dati vuoti restano distinti, e ritentare la stessa richiesta non somma
+nuovamente il materiale. Richiede **031_sale_stock_arrivals.sql** in Supabase.
+
+Ogni riga del magazzino vendite ha il cestino: la conferma indica la quantità
+complessiva che verrà rimossa dalla sede corrente. Righe e card cambiano solo
+quando il backend conferma; in caso di errore la riga rimane. Gli arrivi storici
+sono conservati e il carico successivo della stessa variante riparte da zero.
+
+## Cestino nel magazzino noleggio
+
+Il cestino sulla riga aggregata apre la conferma con i codici selezionabili; quello
+accanto a ciascun codice seleziona soltanto quell'esemplare. Dopo conferma del backend, l'eliminazione aggiorna
+quantità, card ed elenco codici senza ricaricare la pagina o chiudere la scheda.
+Anche dopo l'ultimo esemplare eliminato, la scheda resta aperta con quantità zero. Noleggi e riparazioni passati restano
+conservati; materiale assegnato a un noleggio/prenotazione, ancora da rientrare o
+con riparazione aperta viene bloccato senza eliminazioni parziali. Il materiale
+generico condiviso non può essere rimosso. Richiede la migrazione **032**.
+
+## Quantità e codici nel nuovo materiale noleggio
+
+**Nuovo articolo** permette ora di indicare **Quantità in arrivo** (1–500): modello,
+caratteristiche, gruppo, prezzi unitari, stato e note si compilano una volta sola.
+Il modulo mostra un codice obbligatorio e una matricola facoltativa per ogni
+esemplare. Aumentare la quantità conserva i codici già scritti; i nuovi campi sono
+vuoti. I codici vengono convertiti in maiuscolo e Invio porta al codice successivo.
+I codici duplicati nel modulo sono segnalati prima dell'invio.
+
+Con un solo esemplare rimane l'inserimento singolo; per più esemplari il carico usa
+la funzione atomica della migrazione **033**. Un codice già presente fa fallire
+l'intero carico senza perdere i dati del form. Un ritentativo senza modifiche
+riusa l'identificativo del carico per evitare duplicati dopo errori di connessione.
+
+## Articoli dismessi
+
+Gestione → **Articoli dismessi** (`/management/articoli-dismessi`) legge gli
+esemplari noleggio con `status=retired` oppure marcati da `deleted_at`, nelle sole
+sedi autorizzate. Non crea una nuova tabella: stessi ID, prenotazioni e riparazioni
+restano inalterati. Gli articoli già rimossi con la migrazione 032 sono inclusi.
+Gli esemplari dismessi dal vecchio gestionale possono avere data dismissione non
+registrata, che non viene inventata.
+
+Ricerca, filtri per sede e tipo e paginazione precedono l'apertura della scheda
+singola, che mostra gli stessi conteggi di noleggi/riparazioni del magazzino. La
+scheda è consultabile senza trasferimenti. I comandi noleggio sono ora denominati
+**Dismetti** e usano l'archiviazione esistente, con gli stessi blocchi di sicurezza.
+Magazzini operativi e disponibilità escludono anche gli esemplari già `retired`.
+
+## Ordinamento clienti
+
+Nell'elenco clienti **Ordina per** permette cognome, nome, numero prenotazioni,
+età, email, telefono e note, con verso crescente o decrescente. Età crescente
+significa dai più giovani ai più anziani, usando la data di nascita completa.
+Valori mancanti restano in fondo in entrambi i versi. L'ordinamento opera su tutti
+i risultati della ricerca prima della paginazione; cambiare criterio o verso
+riporta alla prima pagina senza ricaricare i dati.

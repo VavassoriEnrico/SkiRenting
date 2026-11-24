@@ -18,7 +18,7 @@ export function GeneralInventoryDialog({row,locations,onClose,mode='rental',toke
     if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)onClose();
   }}>
     <div className="sale-dialog-header"><div><p className="sale-dialog-eyebrow">Magazzino generale {mode==='sale'?'vendite':'noleggi'} · {row.variant.category.name}</p><h2 id="general-inventory-dialog-title">{row.variant.brand} {row.variant.model}</h2><p className="page-description">{rowQuantity(row)} esemplari complessivi</p></div><button type="button" className="icon-button" aria-label="Chiudi elenco esemplari" disabled={Boolean(viewed)} autoFocus onClick={onClose}><X size={20} aria-hidden="true" /></button></div>
-    <div className="sale-dialog-body"><dl className="sale-details-grid">{variantFields(row.variant).map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
+    <div className="sale-dialog-body"><dl className="sale-details-grid">{mode==='sale'&&<div><dt>Categoria vendita</dt><dd>{row.stocks?.[0]?.variant.sale_details?.category_label||'—'}</dd></div>}{variantFields(row.variant).map(field=><div key={field.label}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
       {mode==='sale'?locations.map(location=>{
         const stocks=(row.stocks||[]).filter(stock=>stock.location.id===location.id);
         const quantity=stocks.reduce((total,stock)=>total+stock.quantity,0);

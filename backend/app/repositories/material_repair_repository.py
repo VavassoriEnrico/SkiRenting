@@ -40,8 +40,10 @@ def complete(client: httpx.Client, location_id: UUID, repair_id: UUID, item_id: 
     return response.json()
 
 
-def get_item(client: httpx.Client, location_id: UUID, item_id: UUID):
-    rows = read_all(client,'rental_inventory',{
-        'select':ITEM_SELECT,'location_id':f'eq.{location_id}','id':f'eq.{item_id}','order':'id',
-    })
+def get_item(client: httpx.Client, location_id: UUID, item_id: UUID, retired_only=False):
+    params = {
+        'select': ITEM_SELECT, 'location_id': f'eq.{location_id}', 'id': f'eq.{item_id}', 'order': 'id',
+        **({'or': '(deleted_at.not.is.null,status.eq.retired)'} if retired_only else {'deleted_at': 'is.null', 'status': 'neq.retired'}),
+    }
+    rows = read_all(client, 'rental_inventory', params)
     return rows[0] if rows else None

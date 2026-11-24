@@ -325,6 +325,43 @@ def api(monkeypatch):
             key = "groups" if request.url.path.endswith("material_groups") else "variants"
             offset = int(request.url.params["offset"])
             return httpx.Response(200, json=state.get(key, [])[offset:offset + 500])
+        if request.url.path == '/rest/v1/rpc/skirenting_register_rental_arrival':
+            body = json.loads(request.content)
+            state['rental_arrival_body'] = body
+            if state.get('rental_arrival_error'):
+                return httpx.Response(400, json={'code': state['rental_arrival_error']})
+            items = [{'id': str(UUID(int=index+2000)), 'category_id': LOCATION_A, 'group_id': LOCATION_A,
+                      'variant_id': LOCATION_A, 'code': unit['code']} for index, unit in enumerate(body['p_units'])]
+            return httpx.Response(200, json={'id': body['p_request_id'], 'quantity': len(items), 'items': items})
+        if request.url.path == '/rest/v1/rpc/skirenting_archive_rental_items':
+            body = json.loads(request.content)
+            state['rental_archive_body'] = body
+            if state.get('rental_archive_error'):
+                return httpx.Response(400, json={'code': state['rental_archive_error']})
+            for item in state.get('items', []):
+                if item['id'] in body['p_item_ids']:
+                    item['deleted_at'] = '2026-11-24T14:00:00Z'
+            return httpx.Response(200, json={'item_ids': body['p_item_ids']})
+        if request.url.path == '/rest/v1/rpc/skirenting_archive_sale_stock':
+            body = json.loads(request.content)
+            state['sale_delete_body'] = body
+            if state.get('sale_delete_error'):
+                return httpx.Response(400, json={'code': state['sale_delete_error']})
+            for row in state.get('sale_items', []):
+                if row['id'] == body['p_inventory_id'] and row['location']['id'] == body['p_location_id']:
+                    row['deleted_at'] = '2026-11-24T10:00:00Z'
+            return httpx.Response(200, json=body['p_inventory_id'])
+        if request.url.path == '/rest/v1/rpc/skirenting_register_sale_arrival':
+            assert request.method == 'POST'
+            body = json.loads(request.content)
+            state['sale_arrival_body'] = body
+            if state.get('sale_arrival_error'):
+                return httpx.Response(400, json={'code': state['sale_arrival_error']})
+            return httpx.Response(200, json={
+                'id': body['p_request_id'], 'inventory_id': USER_ID, 'variant_id': USER_ID,
+                'category_id': body['p_data']['category_id'], 'quantity_added': body['p_data']['quantity'],
+                'quantity': body['p_data']['quantity'], 'price': body['p_data'].get('price'),
+            })
         if request.url.path == "/rest/v1/rpc/skirenting_create_rental_item":
             assert request.method == "POST"
             body = json.loads(request.content)
@@ -375,14 +412,15 @@ def api(monkeypatch):
         if request.url.path == '/rest/v1/sale_inventory':
             assert request.method == 'GET'
             allowed = request.url.params['location_id'][4:-1].split(',')
-            assert set(allowed) == set(state['locations'])
+            assert set(allowed) <= set(state['locations'])
             assert request.url.params['quantity'] == 'gt.0'
+            assert request.url.params['deleted_at'] == 'is.null'
             assert request.url.params['order'] == 'id'
             assert 'location:locations(id,name)' in request.url.params['select']
             if state.get('sale_inventory_unavailable'):
                 return httpx.Response(503, json={'message': 'Unavailable'})
             rows = [row for row in state.get('sale_items', [])
-                    if row['location']['id'] in allowed and row['quantity'] > 0]
+                    if row['location']['id'] in allowed and row['quantity'] > 0 and not row.get('deleted_at')]
             offset = int(request.url.params['offset'])
             return httpx.Response(200, json=rows[offset:offset + 300])
         if request.url.path == "/rest/v1/rental_inventory":
@@ -391,11 +429,11 @@ def api(monkeypatch):
             general = location_filter.startswith('in.(')
             if general:
                 allowed = location_filter[4:-1].split(',')
-                assert set(allowed) == set(state['locations'])
+                assert set(allowed) <= set(state['locations'])
                 assert 'location:locations(id,name)' in request.url.params['select']
                 assert request.method == 'GET'
             elif not generic:
-                assert location_filter == f"eq.{LOCATION_A}"
+                assert location_filter.startswith('eq.') and location_filter[3:] in state['locations']
             assert request.url.params["order"] == "id"
             if state.get("inventory_unavailable"):
                 return httpx.Response(503, json={"message": "Database unavailable"})
@@ -403,8 +441,17 @@ def api(monkeypatch):
             # Simulate a configured Supabase cap smaller than the requested page.
             page_size = min(int(request.url.params["limit"]), 300)
             rows = [row for row in state.get("items", []) if bool(row.get("is_generic")) == generic]
+            if request.url.params.get('deleted_at') == 'is.null':
+                rows = [row for row in rows if not row.get('deleted_at')]
+            if request.url.params.get('status') == 'neq.retired':
+                rows = [row for row in rows if row['status'] != 'retired']
+            if 'or' in request.url.params:
+                assert request.url.params['or'] == '(deleted_at.not.is.null,status.eq.retired)'
+                rows = [row for row in rows if row.get('deleted_at') or row['status'] == 'retired']
             if general:
                 rows = [row for row in rows if row['location']['id'] in allowed]
+            elif not generic:
+                rows = [row for row in rows if row.get('location', {'id': LOCATION_A})['id'] == location_filter[3:]]
             if "id" in request.url.params:
                 identifier = request.url.params['id']
                 requested = [identifier[3:]] if identifier.startswith('eq.') else identifier[4:-1].split(',')
@@ -2100,3 +2147,198 @@ def test_customer_directory_counts_all_visible_bookings_across_pages(api):
     response = client.get('/api/v1/customers', headers=HEADERS)
     assert response.status_code == 200
     assert response.json()[0]['booking_count'] == 602
+
+
+def new_sale_arrival(**changes):
+    return {'request_id': USER_ID, 'category_id': LOCATION_A, 'quantity': 4, 'received_on': '2026-11-24',
+            'price': '199.90', 'new_variant': {'brand': 'Atomic', 'model': 'Redster',
+            'category_label': 'Base', 'details': {'length_cm': 170}}, **changes}
+
+
+def test_sale_arrival_api_sends_only_stock_data_and_checks_location(api):
+    client, state = api
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/sale-arrivals', headers=HEADERS, json=new_sale_arrival())
+    assert response.status_code == 201
+    assert response.json()['quantity'] == 4 and response.json()['price'] == 199.9
+    body = state['sale_arrival_body']
+    assert body['p_request_id'] == USER_ID and body['p_location_id'] == LOCATION_A
+    assert 'request_id' not in body['p_data'] and 'code' not in body['p_data']
+    assert body['p_data']['new_variant']['category_label'] == 'Base'
+    assert client.post(f'/api/v1/locations/{UNASSIGNED_LOCATION}/sale-arrivals', headers=HEADERS, json=new_sale_arrival()).status_code == 403
+    assert client.post(f'/api/v1/locations/{LOCATION_A}/sale-arrivals', json=new_sale_arrival()).status_code == 401
+
+
+@pytest.mark.parametrize('changes', [
+    {'quantity': 0}, {'quantity': 1.5}, {'quantity': True}, {'price': '-1'}, {'price': '1.001'},
+    {'received_on': 'wrong'}, {'variant_id': USER_ID}, {'new_variant': None}, {'code': 'UNWANTED'},
+])
+def test_sale_arrival_api_rejects_invalid_input_before_saving(api, changes):
+    client, state = api
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/sale-arrivals', headers=HEADERS, json=new_sale_arrival(**changes))
+    assert response.status_code == 422 and 'sale_arrival_body' not in state
+
+
+@pytest.mark.parametrize('code,status', [('PGRST202',503), ('23505',409), ('42501',403), ('22023',422)])
+def test_sale_arrival_api_reports_database_errors(api,code,status):
+    client, state = api
+    state['sale_arrival_error'] = code
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/sale-arrivals', headers=HEADERS, json=new_sale_arrival())
+    assert response.status_code == status
+    if code == 'PGRST202':
+        assert '031_sale_stock_arrivals.sql' in response.json()['detail']
+
+
+def test_local_sale_inventory_is_limited_to_selected_authorized_site(api):
+    client, state = api
+    state['sale_items'] = [
+        {'id': str(UUID(int=index+1)), 'quantity': 3, 'price': None, 'notes': None,
+         'variant': {**rental_item(0)['variant'], 'sale_details': {'category_label': 'Base'}},
+         'location': {'id': site, 'name': 'Sede'}} for index, site in enumerate([LOCATION_A, LOCATION_B])
+    ]
+    response = client.get(f'/api/v1/locations/{LOCATION_B}/sale-inventory', headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()['items']) == 1
+    assert response.json()['items'][0]['location']['id'] == LOCATION_B
+    assert response.json()['items'][0]['variant']['sale_details']['category_label'] == 'Base'
+    assert client.get(f'/api/v1/locations/{UNASSIGNED_LOCATION}/sale-inventory', headers=HEADERS).status_code == 403
+
+
+def test_sale_catalog_returns_category_fields_and_sale_classification(api):
+    client, state = api
+    state['categories'] = [{'id': LOCATION_A, 'name': 'Sci', 'code': 'ski', 'detail_type': 'ski'}]
+    state['variants'] = [{**rental_item(0)['variant'], 'sale_details': {'category_label': 'Base'}}]
+    response = client.get(f'/api/v1/locations/{LOCATION_A}/sale-catalog', headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['categories'][0]['detail_type'] == 'ski'
+    assert response.json()['variants'][0]['sale_details']['category_label'] == 'Base'
+
+
+def test_delete_sale_stock_requires_auth_and_uses_site_scoped_rpc(api):
+    client, state = api
+    path = f'/api/v1/locations/{LOCATION_A}/sale-inventory/{USER_ID}'
+    state['sale_items'] = [{'id': USER_ID, 'quantity': 5, 'price': None, 'notes': None,
+                           'variant': rental_item(0)['variant'], 'location': {'id': LOCATION_A, 'name': 'Madesimo'}}]
+    assert client.delete(path).status_code == 401
+    assert 'sale_delete_body' not in state
+    assert client.delete(f'/api/v1/locations/{UNASSIGNED_LOCATION}/sale-inventory/{USER_ID}', headers=HEADERS).status_code == 403
+    assert 'sale_delete_body' not in state
+    assert client.delete(path, headers=HEADERS).status_code == 204
+    assert state['sale_delete_body'] == {'p_location_id': LOCATION_A, 'p_inventory_id': USER_ID}
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/sale-inventory', headers=HEADERS).json()['items'] == []
+
+
+@pytest.mark.parametrize('code,status', [('P0002',404), ('PGRST202',503), ('42501',403)])
+def test_delete_sale_stock_reports_database_errors(api,code,status):
+    client, state = api
+    state['sale_delete_error'] = code
+    assert client.delete(f'/api/v1/locations/{LOCATION_A}/sale-inventory/{USER_ID}', headers=HEADERS).status_code == status
+
+
+def test_rental_inventory_archive_checks_site_and_hides_from_all_inventory_reads(api):
+    client, state = api
+    state['items'] = [{**rental_item(0), 'location': {'id': LOCATION_A, 'name': 'Madesimo'}}]
+    path = f'/api/v1/locations/{LOCATION_A}/rental-inventory/archive'
+    body = {'item_ids': [state['items'][0]['id']]}
+    assert client.post(path, json=body).status_code == 401
+    assert client.post(f'/api/v1/locations/{UNASSIGNED_LOCATION}/rental-inventory/archive', headers=HEADERS, json=body).status_code == 403
+    assert 'rental_archive_body' not in state
+    response = client.post(path, headers=HEADERS, json=body)
+    assert response.status_code == 200 and response.json() == body
+    assert state['rental_archive_body']['p_location_id'] == LOCATION_A
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory', headers=HEADERS).json()['items'] == []
+    assert client.get('/api/v1/rental-inventory', headers=HEADERS).json()['items'] == []
+    assert client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory?available_only=true', headers=HEADERS).json()['items'] == []
+
+
+@pytest.mark.parametrize('code,status', [('55000',409), ('P0002',404), ('42501',403), ('PGRST202',503), ('22023',422)])
+def test_rental_inventory_archive_reports_error_without_success(api,code,status):
+    client, state = api
+    state['rental_archive_error'] = code
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/rental-inventory/archive', headers=HEADERS, json={'item_ids': [USER_ID]})
+    assert response.status_code == status
+
+
+def test_rental_inventory_archive_rejects_empty_selection(api):
+    client, state = api
+    assert client.post(f'/api/v1/locations/{LOCATION_A}/rental-inventory/archive', headers=HEADERS, json={'item_ids': []}).status_code == 422
+    assert 'rental_archive_body' not in state
+
+
+def rental_arrival_request(**changes):
+    return {'request_id': USER_ID, 'category_id': LOCATION_A, 'group_id': LOCATION_A, 'variant_id': LOCATION_A,
+            'units': [{'code': 'UNIT-1'}, {'code': 'UNIT-2', 'serial_number': 'SN2'}], **changes}
+
+
+def test_rental_arrival_api_passes_one_model_and_many_codes_with_site_authorization(api):
+    client, state = api
+    path = f'/api/v1/locations/{LOCATION_A}/rental-arrivals'
+    response = client.post(path, headers=HEADERS, json=rental_arrival_request())
+    assert response.status_code == 201 and response.json()['quantity'] == 2
+    assert [row['code'] for row in response.json()['items']] == ['UNIT-1', 'UNIT-2']
+    body = state['rental_arrival_body']
+    assert body['p_request_id'] == USER_ID and body['p_location_id'] == LOCATION_A
+    assert 'units' not in body['p_data'] and 'request_id' not in body['p_data'] and 'code' not in body['p_data']
+    assert body['p_units'][1]['serial_number'] == 'SN2'
+    assert client.post(path, json=rental_arrival_request()).status_code == 401
+    assert client.post(f'/api/v1/locations/{UNASSIGNED_LOCATION}/rental-arrivals', headers=HEADERS, json=rental_arrival_request()).status_code == 403
+
+
+@pytest.mark.parametrize('units', [[], [{'code': ''}], [{'code': 'CODE'}, {'code': 'code'}], [{'code': str(index)} for index in range(501)]])
+def test_rental_arrival_api_rejects_invalid_code_lists(api,units):
+    client, state = api
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/rental-arrivals', headers=HEADERS, json=rental_arrival_request(units=units))
+    assert response.status_code == 422 and 'rental_arrival_body' not in state
+
+
+@pytest.mark.parametrize('code,status', [('23505',409), ('PGRST202',503), ('22023',422), ('42501',403)])
+def test_rental_arrival_api_reports_failed_batch(api,code,status):
+    client, state = api
+    state['rental_arrival_error'] = code
+    response = client.post(f'/api/v1/locations/{LOCATION_A}/rental-arrivals', headers=HEADERS, json=rental_arrival_request())
+    assert response.status_code == status
+
+
+def test_retired_inventory_includes_previous_retirements_and_respects_locations_and_pagination(api):
+    client, state = api
+    state['items'] = [
+        {**rental_item(index), 'status': 'retired', 'deleted_at': '2026-11-24T10:00:00Z' if index % 2 else None,
+         'location': {'id': LOCATION_A, 'name': 'Madesimo'}} for index in range(1005)
+    ] + [{**rental_item(2000), 'location': {'id': LOCATION_A, 'name': 'Madesimo'}},
+         {**rental_item(2001), 'status': 'retired', 'location': {'id': UNASSIGNED_LOCATION, 'name': 'Esclusa'}}]
+    response = client.get('/api/v1/retired-rental-inventory', headers=HEADERS)
+    assert response.status_code == 200 and len(response.json()['items']) == 1005
+    assert all(row['status'] == 'retired' for row in response.json()['items'])
+    requests = [r for r in state['requests'] if r.url.path.endswith('/rental_inventory')]
+    assert [r.url.params['offset'] for r in requests] == ['0', '300', '600', '900', '1005']
+    assert all('deleted_at' in r.url.params['select'] for r in requests)
+    normal = client.get(f'/api/v1/locations/{LOCATION_A}/rental-inventory', headers=HEADERS)
+    assert [row['id'] for row in normal.json()['items']] == [state['items'][-2]['id']]
+    assert client.get('/api/v1/retired-rental-inventory').status_code == 401
+
+
+def test_retired_item_details_keeps_usage_and_repairs_accessible_without_exposing_active_items(api):
+    client, state = api
+    retired = {**rental_item(0), 'status': 'retired', 'deleted_at': '2026-11-24T10:00:00Z'}
+    state['items'] = [retired, rental_item(1)]
+    state['unit_rentals'] = [
+        {'id': f'line-{index}', 'booking_id': f'booking-{index}', 'rental_inventory_id': retired['id'], 'delivered_at': None,
+         'booking': {'status': 'completed', 'starts_on': day, 'created_at': f'{day}T10:00:00Z'}}
+        for index, day in enumerate(['2000-01-01', '2000-03-01'])
+    ]
+    state['repairs'] = [{'id': 'old-repair', 'rental_inventory_id': retired['id'], 'status': 'completed', 'completed_at': '2000-02-01T10:00:00Z'}]
+    response = client.get(f"/api/v1/locations/{LOCATION_A}/retired-rental-inventory/{retired['id']}", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()['statistics']['rental_count'] == 2
+    assert response.json()['statistics']['repair_count'] == 1
+    assert response.json()['statistics']['rentals_since_last_repair'] == 1
+    assert client.get(f"/api/v1/locations/{LOCATION_A}/rental-inventory/{retired['id']}", headers=HEADERS).status_code == 404
+    assert client.get(f"/api/v1/locations/{LOCATION_A}/retired-rental-inventory/{state['items'][1]['id']}", headers=HEADERS).status_code == 404
+    assert client.get(f"/api/v1/locations/{UNASSIGNED_LOCATION}/retired-rental-inventory/{retired['id']}", headers=HEADERS).status_code == 403
+
+
+@pytest.mark.parametrize('profile,locations', [(None, [LOCATION_A]), (PROFILE, [])])
+def test_retired_inventory_requires_configured_operator(api,profile,locations):
+    client, state = api
+    state['profile'], state['locations'] = profile, locations
+    assert client.get('/api/v1/retired-rental-inventory', headers=HEADERS).status_code == 403
+    assert not any(request.url.path.endswith('rental_inventory') for request in state['requests'])

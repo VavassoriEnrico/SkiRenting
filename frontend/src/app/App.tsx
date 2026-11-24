@@ -12,6 +12,7 @@ import { RepairsPage } from '../pages/repairs/RepairsPage';
 import { ReturnsPage } from '../pages/returns/ReturnsPage';
 import { RequireAuth } from '../auth/RequireAuth';
 import { LoginPage } from '../pages/login/LoginPage';
+import { RetiredItemsPage } from '../pages/management/RetiredItemsPage';
 import { ManagementPage } from '../pages/management/ManagementPage';
 import { SeasonalRatesPage } from '../pages/seasonal/SeasonalRatesPage';
 import { NewRentalPage } from '../pages/operations/NewRentalPage';
@@ -29,6 +30,7 @@ export function App() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/clienti" element={<CustomersPage />} />
         <Route path="/management" element={<ManagementPage />} />
+        <Route path="/management/articoli-dismessi" element={<RetiredItemsPage />} />
         <Route path="/management/tariffe-stagionali" element={<SeasonalRatesPage/>}/>
         <Route path="/management/promozioni" element={<PromotionsPage />} />
         <Route path="/management/hotels" element={<HotelsPage />} />

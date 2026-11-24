@@ -6,7 +6,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.repositories import rental_inventory_repository, material_repair_repository
-from app.schemas.rental_inventory import RentalInventoryRead, RentalInventorySummary, RentalItemCreate
+from app.schemas.rental_inventory import RentalInventoryRead, RentalInventorySummary, RentalItemCreate, RentalArrivalCreate
 from app.services.operator_service import get_authorized_location, get_operator_session
 
 
@@ -138,3 +138,60 @@ def get_general_inventory(client: httpx.Client, user_id: UUID):
         }
     except httpx.HTTPError as error:
         raise HTTPException(503,'Impossibile caricare il magazzino generale da Supabase.') from error
+
+
+def archive_items(client: httpx.Client, user_id: UUID, location_id: UUID, item_ids: list[UUID]):
+    get_authorized_location(client, user_id, location_id)
+    try:
+        return rental_inventory_repository.archive_items(client, location_id, item_ids)
+    except httpx.HTTPStatusError as error:
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code') if isinstance(body, dict) else None
+        if code == '55000':
+            raise HTTPException(409, 'Impossibile dismettere: uno degli esemplari è assegnato a un noleggio, ancora da riconsegnare o ha una riparazione aperta.') from error
+        if code == 'P0002':
+            raise HTTPException(404, 'Articolo non trovato nella sede selezionata. Aggiorna il magazzino.') from error
+        if code == '42501':
+            raise HTTPException(403, 'Non sei autorizzato a dismettere articoli di questa sede.') from error
+        if code in ('PGRST202', 'PGRST204', '42703'):
+            raise HTTPException(503, 'Eseguire 032_archive_rental_inventory.sql in Supabase.') from error
+        if code == '22023':
+            raise HTTPException(422, 'Seleziona gli esemplari da dismettere. Il materiale generico condiviso non può essere dismesso.') from error
+        raise HTTPException(503, 'Dismissione non riuscita. Aggiorna il magazzino per verificare gli articoli.') from error
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Connessione interrotta. Verifica il magazzino prima di riprovare.') from error
+
+
+def register_arrival(client: httpx.Client, user_id: UUID, location_id: UUID, data: RentalArrivalCreate):
+    get_authorized_location(client, user_id, location_id)
+    try:
+        return rental_inventory_repository.register_arrival(client, location_id,
+            data.model_dump(mode='json', exclude_none=True))
+    except httpx.HTTPStatusError as error:
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code') if isinstance(body, dict) else None
+        if code in ('PGRST202', 'PGRST204', '42703', '42P01'):
+            raise HTTPException(503, 'Eseguire 033_rental_stock_arrivals.sql in Supabase.') from error
+        if code == '23505':
+            raise HTTPException(409, 'Un codice è già presente oppure questo arrivo è stato utilizzato con dati diversi. Nessun nuovo esemplare è stato caricato: controlla i codici e riprova.') from error
+        raise inventory_error(error) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Connessione interrotta. Puoi ritentare lo stesso carico senza cambiare i dati: non verrà duplicato.') from error
+
+
+def get_retired_inventory(client: httpx.Client, user_id: UUID):
+    operator = get_operator_session(client, user_id)
+    try:
+        return {
+            'categories': rental_inventory_repository.list_categories(client),
+            'locations': operator.locations,
+            'items': rental_inventory_repository.list_retired_items(client, [str(site.id) for site in operator.locations]),
+        }
+    except httpx.HTTPError as error:
+        raise HTTPException(503, 'Impossibile caricare gli articoli dismessi. Verifica che la migrazione 032 sia stata eseguita.') from error

@@ -377,7 +377,7 @@ Non richiede nuove migrazioni oltre a quelle già usate dal magazzino/riparazion
 Restituisce categorie, sedi e righe con id, variante completa, sede, quantità,
 prezzo unitario nullable e note. Usa lo stesso contesto JWT e letture paginate;
 non legge materiale da noleggio né riparazioni e non effettua scritture.
-Richiede la tabella già prevista dalla migrazione 002, senza nuove query.
+Richiede la tabella prevista dalla migrazione 002 e la migrazione 031 per la categoria commerciale della variante.
 Il modello attuale non contiene codici per singolo pezzo, né righe di storico vendite.
 
 La lettura completa del magazzino noleggio di una sede include `summary` con
@@ -528,3 +528,54 @@ locale e verifica ogni cella, prenotazioni multiple, risposte API saldate, RLS e
 spazio di tabelle/indici. Con `--import-dir private/booking-imports/importazione`
 valida i CSV finali nelle stesse tabelle del gestionale. Non legge connessioni o
 credenziali Supabase. Le istruzioni del caricamento sono in backend/sql/README.md.
+
+## Arrivi materiale vendita (031)
+
+Eseguire `sql/031_sale_stock_arrivals.sql` prima di utilizzare il nuovo form:
+
+- `GET /api/v1/locations/{id}/sale-inventory`: giacenze positive della sede autorizzata.
+- `GET /api/v1/locations/{id}/sale-catalog`: tipi, caratteristiche e modelli attivi;
+  le varianti possono essere riusate dal catalogo condiviso senza creare esemplari
+  o modificare le giacenze di noleggio.
+- `POST /api/v1/locations/{id}/sale-arrivals`: `request_id`, `category_id`,
+  `variant_id` oppure `new_variant` (marca, modello, anno, categoria commerciale
+  facoltativa e dettagli), quantità intera positiva, data arrivo, prezzi unitari
+  e note facoltativi. Lo stesso request_id e gli stessi dati sono idempotenti.
+
+`new_variant.category_label` è una classificazione commerciale separata dai
+material_groups tariffari. Il magazzino generale vendite legge anche questa
+classificazione. L'operazione è atomica e richiede l'assegnazione alla sede sia
+nell'API sia nella funzione PostgreSQL. Nessun codice univoco per pezzo.
+
+`DELETE /api/v1/locations/{id}/sale-inventory/{inventory_id}` archivia la giacenza
+locale. La variante e i vecchi arrivi restano conservati. Le letture locali e
+generali escludono `deleted_at`; un successivo arrivo riparte dalla nuova quantità.
+
+## Eliminazione esemplari noleggio (032)
+
+`POST /api/v1/locations/{id}/rental-inventory/archive` riceve `item_ids` (da 1 a
+500 UUID). Archivia atomicamente gli esemplari della sede autorizzata e restituisce
+gli ID; non modifica lo storico. Blocca noleggi aperti o prenotati senza rientro,
+riparazioni aperte e codice generico 1. Richiede `032_archive_rental_inventory.sql`.
+Le letture magazzino/disponibilità e la scheda singola escludono `deleted_at`.
+
+## Carico multiplo noleggio (033)
+
+`POST /api/v1/locations/{id}/rental-arrivals` riceve le stesse scelte di catalogo,
+prezzi, stato e note dell'inserimento singolo, con `request_id` e `units` al posto
+di codice/matricola globali. Ogni unità contiene `code` e `serial_number` facoltativo.
+Restituisce `id`, `quantity` e gli articoli creati in `items`. Il carico è atomico e
+idempotente, con controlli della sede anche nella funzione PostgreSQL. Richiede
+`033_rental_stock_arrivals.sql`; l'endpoint singolo continua a funzionare.
+
+## Consultazione materiale dismesso
+
+`GET /api/v1/retired-rental-inventory` restituisce i singoli esemplari dismessi
+(`status=retired` o `deleted_at` valorizzato) di tutte le sedi autorizzate, con sede
+e data/operatore di dismissione quando registrati. Non sono necessarie nuove
+tabelle né migrazioni oltre alla 032 già richiesta per archiviare gli esemplari.
+
+`GET /api/v1/locations/{id}/retired-rental-inventory/{item_id}` fornisce la scheda
+e gli stessi conteggi storici noleggi/riparazioni del materiale operativo. La sede
+viene verificata anche qui e gli articoli operativi non vengono esposti da questa
+rotta. I magazzini ordinari e la disponibilità escludono il materiale dismesso.

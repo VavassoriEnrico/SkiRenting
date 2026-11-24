@@ -125,3 +125,35 @@ sono collegati al backend; le altre pagine usano dati demo o segnaposto.
   interventi aperti in `material_repairs`, elenco Riparazioni e conteggio nella card.
   Verificare anche invio in riparazione e chiusura dell'intervento al nuovo noleggio.
 - [ ] Sistemare la dashboard come ultimo intervento, dopo aver definito le altre funzionalità e i dati da riepilogare.
+
+## Arrivi materiale vendita
+
+- Il materiale in vendita è gestito per variante/sede/quantità, senza scansione o
+  codice univoco per ciascun pezzo.
+- Registrare un arrivo scegliendo tipo, categoria commerciale, marca, modello,
+  caratteristiche specifiche e quantità; riusare le varianti già esistenti.
+- Sommare un nuovo arrivo alla giacenza locale e mantenere separate le misure.
+- Conservare data arrivo, quantità, eventuali prezzi unitari di acquisto/vendita,
+  note e operatore. Lo stesso invio ritentato non deve duplicare il carico.
+
+## Carico multiplo noleggio e cestino
+
+- Per un arrivo di più esemplari identici compilare modello e caratteristiche una
+  volta, indicare la quantità e inserire un codice diverso per ogni esemplare.
+  Eventuale matricola individuale; prezzi unitari, stato e note condivisi.
+- Salvare il carico in un'unica operazione: un codice errato o già presente
+  annulla l'intero inserimento. Ritentativi identici non duplicano gli articoli.
+- Il cestino del magazzino noleggio permette di selezionare i singoli codici:
+  conserva storico e riparazioni e impedisce l'eliminazione di materiale impegnato
+  o in riparazione. I codici archiviati non sono riutilizzabili.
+
+## Consultazione dismessi e ordinamento clienti
+
+- Gestione contiene **Articoli dismessi** per il materiale da noleggio, con codici,
+  caratteristiche, sede, data quando disponibile e scheda con statistiche di
+  utilizzo/riparazioni. Si riusa rental_inventory, senza spostare o duplicare righe.
+- Gli operatori possono dismettere gli esemplari; storico e riferimenti restano
+  conservati. La pagina include anche quelli precedentemente archiviati.
+- Clienti ordinabili in entrambi i versi per cognome, nome, numero prenotazioni,
+  età, email, telefono e note, applicando l'ordine prima della paginazione e
+  mantenendo i dati mancanti in fondo.

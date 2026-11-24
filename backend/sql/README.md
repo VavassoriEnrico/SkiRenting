@@ -667,3 +667,60 @@ Gli adattamenti nullable sono vincolati ai record is_legacy; i nuovi noleggi
 mantengono cliente, esemplari e importi obbligatori. Lo stato tecnico imported
 e rental_kind legacy distinguono i dati precedenti; l'API li presenta come conclusi
 quando legacy_paid_in_full=true. Noleggi attuali e rientri restano operativi.
+
+## 031 — Arrivi nel magazzino vendite
+
+Eseguire [031_sale_stock_arrivals.sql](031_sale_stock_arrivals.sql) dopo 030.
+Il carico usa **sale_inventory** per variante e sede, senza codici per i singoli
+pezzi. La quantità ricevuta si somma alla giacenza; misure e categorie di vendita
+diverse restano varianti distinte. Un prezzo vendita vuoto conserva quello già
+impostato; un prezzo esplicito, anche zero, lo aggiorna nella sola sede scelta.
+
+Aggiunge **sale_variant_details** per la categoria/fascia commerciale e
+**sale_stock_arrivals** per la registrazione di quantità ricevuta, data, prezzi
+unitari, note e operatore. Il prezzo di acquisto appartiene all'arrivo e non
+sostituisce il prezzo di vendita. Non cambia gruppi e tariffe di noleggio.
+
+La funzione `skirenting_register_sale_arrival` verifica la sede dell'operatore,
+crea o riusa la variante e aggiorna la giacenza in un'unica transazione. Lo stesso
+identificativo di richiesta non carica due volte il materiale; se viene riusato
+con dati differenti restituisce un conflitto. Le nuove tabelle sono leggibili
+tramite RLS; le scritture passano solo dalla funzione, senza service_role.
+
+Il cestino archivia la riga della sola sede selezionata tramite
+`skirenting_archive_sale_stock`: `deleted_at/deleted_by` nascondono la giacenza
+senza cancellare variante e registrazioni degli arrivi. Un nuovo carico della
+stessa variante riattiva la riga partendo dalla nuova quantità, senza sommare
+quella eliminata. Anche l'archiviazione controlla i permessi e può essere ritentata.
+
+## 032 — Cestino magazzino noleggio
+
+Eseguire [032_archive_rental_inventory.sql](032_archive_rental_inventory.sql) dopo
+031. L'eliminazione è per esemplari, con selezione dei codici se una riga contiene
+più unità. `rental_inventory.deleted_at/deleted_by` archiviano l'esemplare e lo
+rendono dismesso, non noleggiabile e non prenotabile. Il codice rimane riservato;
+variante, riparazioni e righe di prenotazioni passate non vengono cancellate.
+
+La funzione `skirenting_archive_rental_items` controlla sede e permessi, blocca
+il materiale generico condiviso, gli esemplari assegnati a noleggi non annullati
+e ancora da rientrare (anche prenotazioni future), e le riparazioni aperte.
+Un blocco annulla l'intera selezione; le righe sono bloccate nello stesso ordine
+della conferma noleggio per coordinare richieste simultanee. I trigger impediscono
+nuovi riferimenti o trasferimenti del materiale archiviato. Ripetere la stessa
+archiviazione è sicuro. Magazzino locale/generale e disponibilità escludono gli
+esemplari archiviati.
+
+## 033 — Carichi multipli materiale noleggio
+
+Eseguire [033_rental_stock_arrivals.sql](033_rental_stock_arrivals.sql) dopo 032.
+La funzione `skirenting_register_rental_arrival` registra da 1 a 500 esemplari
+con categoria, gruppo, variante, stato e prezzi condivisi, ma codice e matricola
+individuali. Le nuove voci del catalogo vengono create una sola volta e riusate
+per tutti gli esemplari. I prezzi sono unitari.
+
+**rental_stock_arrivals** conserva identificativo del carico, quantità, sede,
+operatore, dati richiesti e risultato. Un carico ripetuto con lo stesso ID e gli
+stessi dati restituisce il risultato precedente; ID riusati con dati differenti
+sono rifiutati. Codici vuoti o ripetuti sono respinti. Un codice già presente o
+qualsiasi errore annulla l'intera operazione, incluse le nuove voci del catalogo.
+Non vengono rinominati né riutilizzati i codici già presenti nello storico.
